@@ -347,7 +347,15 @@ private fun ClipperHome(context: Context) {
                         valueRange = 1f..30f,
                         steps = 28
                     )
-                    Text(if (hasAnalysedVideo) "Choose 1–30 clips. Face and scene moments are prioritised, then remaining slots use evenly spaced sections." else "Run Find moments or Track faces first to analyse this video.", color = Muted, fontSize = 10.sp)
+                    Text(
+                        when {
+                            durationMs < MIN_SHORT_DURATION_MS -> "Shorts export needs at least 1 minute of source footage. This video is too short for a 60-second Short."
+                            hasAnalysedVideo -> "Choose 1–30 clips. Every AI Short is at least 60 seconds; face, scene and transcript signals rank the highlights."
+                            else -> "Run Find moments or Track faces first to analyse this video."
+                        },
+                        color = if (durationMs < MIN_SHORT_DURATION_MS) Color(0xFFFFB86B) else Muted,
+                        fontSize = 10.sp
+                    )
                     val availableMoments = remember(facePicks, scenePicks, speechCaptions, durationMs, requestedClipCount.toInt(), hasAnalysedVideo) { if (hasAnalysedVideo) buildClipMoments(facePicks, scenePicks, speechCaptions, durationMs, requestedClipCount.toInt()) else emptyList() }
                     if (availableMoments.isNotEmpty()) {
                         Button(
@@ -377,8 +385,8 @@ private fun ClipperHome(context: Context) {
                     availableMoments.take(6).forEachIndexed { index, time ->
                         Button(
                             onClick = {
-                                startMs = (time - 10000L).coerceAtLeast(0L)
-                                endMs = (startMs + 30000L).coerceAtMost(durationMs)
+                                startMs = (time - 20000L).coerceAtLeast(0L)
+                                endMs = (startMs + MIN_SHORT_DURATION_MS).coerceAtMost(durationMs)
                                 player.seekTo(startMs)
                                 status = "Selected AI face moment ${index + 1}. Adjust trim if needed."
                             },
@@ -514,11 +522,13 @@ private fun buildClipMoments(
     durationMs: Long,
     requestedCount: Int
 ): List<Long> {
-    if (durationMs < 3000L || requestedCount <= 0) return emptyList()
-    val clipLengthMs = 30000L
+    if (durationMs < MIN_SHORT_DURATION_MS || requestedCount <= 0) return emptyList()
+    val clipLengthMs = MIN_SHORT_DURATION_MS
+    val leadInMs = 20000L
     val maxByDuration = (durationMs / clipLengthMs).toInt().coerceAtLeast(1)
     val target = requestedCount.coerceIn(1, 30).coerceAtMost(maxByDuration)
-    val latestMoment = (durationMs - 20000L).coerceAtLeast(0L)
+    // The scored moment sits about 20 seconds into its 60-second Short.
+    val latestMoment = (durationMs - (clipLengthMs - leadInMs)).coerceAtLeast(0L)
 
     // Candidate windows are scored from transcript evidence plus independent visual signals.
     val candidates = linkedSetOf<Long>()
@@ -544,7 +554,7 @@ private fun buildClipMoments(
         "amazing", "problem", "solution", "first time", "nobody", "everyone"
     )
     fun score(moment: Long): Double {
-        val start = (moment - 10000L).coerceAtLeast(0L)
+        val start = (moment - leadInMs).coerceAtLeast(0L)
         val end = (start + clipLengthMs).coerceAtMost(durationMs)
         val cues = speechCaptions.filter { it.endMs > start && it.startMs < end }
         val transcript = cues.joinToString(" ") { it.text.lowercase(Locale.US) }
@@ -801,10 +811,10 @@ private suspend fun exportSuggestedClips(
     onError: (String) -> Unit
 ) = withContext(Dispatchers.Main) {
     val clips = moments.distinct().sorted().map { moment ->
-        val start = (moment - 10000L).coerceAtLeast(0L)
-        val end = (start + 30000L).coerceAtMost(durationMs)
+        val start = (moment - 20000L).coerceAtLeast(0L)
+        val end = (start + MIN_SHORT_DURATION_MS).coerceAtMost(durationMs)
         start to end
-    }.filter { it.second - it.first >= 3000L }
+    }.filter { it.second - it.first >= MIN_SHORT_DURATION_MS }
     if (clips.isEmpty()) {
         onError("No usable AI clip ranges were found.")
         return@withContext
