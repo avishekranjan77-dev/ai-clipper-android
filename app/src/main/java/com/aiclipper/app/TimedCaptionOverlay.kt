@@ -39,7 +39,7 @@ class TimedCaptionOverlay(
         val timeMs = presentationTimeUs / 1000L
         val cue = cues.firstOrNull { timeMs >= it.startMs && timeMs < it.endMs } ?: return
         val absoluteMs = clipStartMs + timeMs
-        val nearest = faceSamples.minByOrNull { kotlin.math.abs(it.timeMs - absoluteMs) }
+        val nearest = faceSamples.minByOrNull { kotlin.math.abs(it.timeMs - absoluteMs) }?.takeIf { kotlin.math.abs(it.timeMs - absoluteMs) <= 2500L }
         val faceOccupiesLowerCaptionZone = nearest?.faces?.any { it.y in 0.58f..0.96f && it.x in 0.18f..0.82f } == true
         val placeAtTop = faceOccupiesLowerCaptionZone
         textPaint.textSize = (canvas.width * when (style) {
