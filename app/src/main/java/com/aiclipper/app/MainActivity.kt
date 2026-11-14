@@ -590,7 +590,7 @@ private fun ClipperHome(context: Context) {
 
             Button(
                 onClick = { videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)) },
-                enabled = !processing && !semanticBusy,
+                enabled = !processing && !semanticBusy && !importingLink,
                 modifier = Modifier.fillMaxWidth().height(50.dp),
                 shape = RoundedCornerShape(15.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF292B34))
