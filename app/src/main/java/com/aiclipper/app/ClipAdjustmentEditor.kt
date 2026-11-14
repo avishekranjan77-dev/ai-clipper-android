@@ -131,7 +131,7 @@ fun ClipAdjustmentEditor(clip: GeneratedClip, onCancel: () -> Unit, onRendered: 
                         onComplete = { result -> rendering = false; onRendered(result) },
                         onFailure = { message -> rendering = false; onError(message) })
                 }
-            }, enabled = !rendering && (zoom != 1f || horizontal != 0f || vertical != 0f || trimStart > 0f || trimEnd < 1f),
+            }, enabled = !rendering && (selectedAspect != clip.aspectRatio || zoom != 1f || horizontal != 0f || vertical != 0f || trimStart > 0f || trimEnd < 1f),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B7CFF))) { Text(if (rendering) "Rendering…" else "Apply & re-render") }
         }
         if (rendering) Text("Rendering a new file. Your original clip is kept until rendering succeeds.", color = Color(0xFF9295A1), fontSize = 10.sp)
