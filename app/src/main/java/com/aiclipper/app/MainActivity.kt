@@ -1086,6 +1086,7 @@ private suspend fun exportSuggestedClips(
     exportNext()
 }
 
+@UnstableApi
 private fun scopeExportProgress(
     transformer: Transformer,
     progressHolder: androidx.media3.transformer.ProgressHolder,
