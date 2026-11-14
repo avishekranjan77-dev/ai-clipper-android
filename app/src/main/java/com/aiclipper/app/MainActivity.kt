@@ -990,7 +990,11 @@ private suspend fun exportSuggestedClips(
         val clipFaceLayouts = faceLayouts.filter { it.timeMs in startMs..endMs }
         val clipFaceTrack = faceTrack.filter { it.timeMs in startMs..endMs }
         val clipSpeakerTurns = speakerTurns.filter { it.endMs > startMs && it.startMs < endMs }
-        if (twoPersonSplitScreen && clipFaceLayouts.any { it.faces.size >= 2 }) {
+        val sourceAspect = clipFaceLayouts.firstOrNull()?.sourceAspectRatio
+            ?: clipFaceTrack.firstOrNull()?.aspectRatio
+            ?: 1f
+        val supportsStackedSplit = outputAspect == "9:16" || (outputAspect == "Original" && sourceAspect < 1f)
+        if (twoPersonSplitScreen && supportsStackedSplit && clipFaceLayouts.any { it.faces.size >= 2 }) {
             videoEffects.add(
                 TwoPersonSplitScreenEffect(
                     clipFaceLayouts,
