@@ -7,6 +7,7 @@ import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.ThinkingConfig
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -165,8 +166,10 @@ object SemanticHighlightEngine {
                                 systemInstruction = Contents.of(
                                     "You are a precise video-editor highlight analyst. Understand the meaning, context, story arc, " +
                                         "humour, emotion, surprise, conflict, useful insight and completeness of spoken conversation. " +
-                                        "Do not reveal reasoning. Do not invent dialogue or timestamps. Return only valid JSON."
-                                )
+                                        "Do not invent dialogue or timestamps. Return only valid JSON."
+                                ),
+                                thinkingConfig = ThinkingConfig(enableThinking = false, thinkingTokenBudget = 0),
+                                maxOutputToken = 512
                             )
                         )
                         val response = try {
@@ -227,7 +230,7 @@ object SemanticHighlightEngine {
                         "Compare these candidate moments from the complete source video. Select the strongest and most varied moments. " +
                             "Do not select overlapping ranges or repeated versions of the same point. " +
                             "Return up to ${pool.size} items in ranked order with original integer id and revised score 0-100. " +
-                            "Do not invent ids. JSON only: {\"ranked\":[{\"id\":0,\"score\":95}]}\n\nCANDIDATES:\n$options\n\n/no_think"
+                            "Do not invent ids. JSON only: {\"ranked\":[{\"id\":0,\"score\":95}]}\n\nCANDIDATES:\n$options"
                     ).collect { message -> append(message.toString()) }
                 }
             }
