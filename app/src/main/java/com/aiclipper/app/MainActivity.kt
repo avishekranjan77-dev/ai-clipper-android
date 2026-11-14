@@ -901,8 +901,10 @@ private suspend fun exportSuggestedClips(
             videoEffects.add(OverlayEffect(listOf(TextOverlay.createStaticTextOverlay(styled))))
         }
         val edited = EditedMediaItem.Builder(item).setEffects(Effects(emptyList(), videoEffects)).build()
+        var stopProgress: () -> Unit = {}
         val transformer = Transformer.Builder(context).addListener(object : Transformer.Listener {
             override fun onCompleted(composition: androidx.media3.transformer.Composition, exportResult: ExportResult) {
+                stopProgress()
                 try {
                     val matchingHighlight = highlights.maxByOrNull { highlight ->
                         (minOf(highlight.endMs, endMs) - maxOf(highlight.startMs, startMs)).coerceAtLeast(0L)
@@ -925,15 +927,23 @@ private suspend fun exportSuggestedClips(
                 }
             }
             override fun onError(composition: androidx.media3.transformer.Composition, exportResult: ExportResult, exportException: ExportException) {
+                stopProgress()
                 output.delete()
                 generated.forEach { it.file.delete() }
                 onError("Clip ${index + 1} export failed: ${exportException.localizedMessage ?: "unknown error"}")
             }
         }).build()
-        transformer.start(edited, output.absolutePath)
-        val progressHolder = androidx.media3.transformer.ProgressHolder()
-        scopeExportProgress(transformer, progressHolder) { value ->
-            onProgress((index.toFloat() + value) / clips.size)
+        try {
+            transformer.start(edited, output.absolutePath)
+            val progressHolder = androidx.media3.transformer.ProgressHolder()
+            stopProgress = scopeExportProgress(transformer, progressHolder) { value ->
+                onProgress((index.toFloat() + value) / clips.size)
+            }
+        } catch (error: Exception) {
+            stopProgress()
+            output.delete()
+            generated.forEach { it.file.delete() }
+            onError("Could not start clip ${index + 1} export: ${error.localizedMessage ?: "unknown error"}")
         }
     }
     exportNext()
@@ -943,10 +953,12 @@ private fun scopeExportProgress(
     transformer: Transformer,
     progressHolder: androidx.media3.transformer.ProgressHolder,
     onProgress: (Float) -> Unit
-) {
+): () -> Unit {
     val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    var active = true
     val poll = object : Runnable {
         override fun run() {
+            if (!active) return
             try {
                 val state = transformer.getProgress(progressHolder)
                 if (state == Transformer.PROGRESS_STATE_AVAILABLE) {
@@ -956,10 +968,15 @@ private fun scopeExportProgress(
                     handler.postDelayed(this, 500L)
                 }
             } catch (_: Exception) {
+                active = false
             }
         }
     }
     handler.post(poll)
+    return {
+        active = false
+        handler.removeCallbacks(poll)
+    }
 }
 
 private fun copyToGallery(context: Context, source: File): Boolean {
