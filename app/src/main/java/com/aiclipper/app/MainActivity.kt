@@ -932,11 +932,13 @@ private suspend fun exportSuggestedClips(
     caption: String,
     speechCaptions: List<CaptionCue>,
     captionStyle: CaptionStyle,
+    preferredRanges: List<ClipRange>,
     onProgress: (Float) -> Unit,
     onComplete: (List<GeneratedClip>) -> Unit,
     onError: (String) -> Unit
 ) = withContext(Dispatchers.Main) {
-    val clips = ClipIntelligence.buildExportRanges(moments, durationMs)
+    val clips = (preferredRanges.takeIf { it.isNotEmpty() } ?: ClipIntelligence.buildExportRanges(moments, durationMs))
+        .filter { it.durationMs >= MIN_SHORT_DURATION_MS && it.startMs >= 0L && it.endMs <= durationMs }
         .map { it.startMs to it.endMs }
     if (clips.isEmpty()) {
         onError("No usable AI clip ranges were found.")
