@@ -393,7 +393,7 @@ private fun ClipperHome(context: Context) {
                     if (!semanticModelReady) {
                         Column(Modifier.fillMaxWidth().background(Color(0xFF20202A), RoundedCornerShape(14.dp)).padding(12.dp)) {
                             Text("ONE-TIME AI SETUP", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            Optional upgrade: this free on-device language model can analyse spoken captions, but it is not required to create or render clips.
+                            Text("Optional upgrade: this free on-device language model can analyse spoken captions, but it is not required to create or render clips.", color = Muted, fontSize = 10.sp)
                             Button(
                                 onClick = {
                                     if (semanticBusy || processing) return@Button
