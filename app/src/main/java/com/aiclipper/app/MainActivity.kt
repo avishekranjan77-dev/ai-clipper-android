@@ -761,12 +761,7 @@ private suspend fun exportVideo(
             val videoEffects = mutableListOf<androidx.media3.common.Effect>()
             if (portrait) {
                 if (faceTrack.isNotEmpty()) videoEffects.add(createFaceTrackingEffect(faceTrack, startMs))
-                when (outputAspect) {
-            "9:16" -> videoEffects.add(Presentation.createForWidthAndHeight(1080, 1920, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
-            "1:1" -> videoEffects.add(Presentation.createForWidthAndHeight(1080, 1080, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
-            "16:9" -> videoEffects.add(Presentation.createForWidthAndHeight(1920, 1080, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
-            // Original keeps the source video's dimensions and aspect ratio.
-        }
+                if (portrait) videoEffects.add(Presentation.createForWidthAndHeight(1080, 1920, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
             }
             val clipCues = speechCaptions.filter { it.endMs > startMs && it.startMs < endMs }.map {
                 CaptionCue((it.startMs - startMs).coerceAtLeast(0L), (it.endMs - startMs).coerceAtMost(endMs - startMs), it.text)
