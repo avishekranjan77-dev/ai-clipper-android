@@ -8,6 +8,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -88,6 +90,25 @@ fun ClipAdjustmentEditor(clip: GeneratedClip, onCancel: () -> Unit, onRendered: 
                 update = { it.player = previewPlayer },
                 modifier = Modifier.fillMaxWidth().height(230.dp)
             )
+            val frameWidth = when (selectedAspect) {
+                "1:1" -> 0.62f
+                "16:9" -> 0.96f
+                "Original" -> 0.94f
+                else -> 0.45f
+            }
+            val frameHeight = when (selectedAspect) {
+                "1:1" -> 0.90f
+                "16:9" -> 0.52f
+                "Original" -> 0.90f
+                else -> 0.90f
+            }
+            Box(Modifier.fillMaxWidth(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                Box(
+                    Modifier.fillMaxWidth(frameWidth).fillMaxHeight(frameHeight)
+                        .offset(x = (horizontal * 24f).dp, y = (vertical * 24f).dp)
+                        .border(2.dp, Color(0xFF8B7CFF), RoundedCornerShape(6.dp))
+                )
+            }
         }
         Text("Zoom  ${"%.2f".format(zoom)}×", color = Color.White, fontSize = 12.sp)
         Slider(value = zoom, onValueChange = { zoom = it }, valueRange = 1f..2.5f)
@@ -125,7 +146,9 @@ private fun renderAdjustedClip(context: Context, clip: GeneratedClip, zoom: Floa
     val output = File(context.filesDir, "adjusted_clip_${System.currentTimeMillis()}.mp4")
     val clipping = MediaItem.ClippingConfiguration.Builder().setStartPositionMs(start).setEndPositionMs(end).build()
     val item = MediaItem.Builder().setUri(android.net.Uri.fromFile(source)).setClippingConfiguration(clipping).build()
-    val framing = MatrixTransformation { Matrix().apply { postScale(zoom, zoom); postTranslate(horizontal * 540f, vertical * 960f) } }
+    val frameWidthPx = if (outputAspect == "16:9") 1920f else 1080f
+    val frameHeightPx = when (outputAspect) { "1:1" -> 1080f; "16:9" -> 1080f; else -> 1920f }
+    val framing = MatrixTransformation { Matrix().apply { postScale(zoom, zoom); postTranslate(horizontal * frameWidthPx / 2f, vertical * frameHeightPx / 2f) } }
     val videoEffects = mutableListOf<androidx.media3.common.Effect>()
     when (outputAspect) {
         "9:16" -> videoEffects.add(Presentation.createForWidthAndHeight(1080, 1920, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
