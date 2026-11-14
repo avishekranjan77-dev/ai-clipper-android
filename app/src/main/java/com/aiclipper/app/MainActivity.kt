@@ -101,6 +101,7 @@ private val Muted = Color(0xFF9295A1)
 private val Green = Color(0xFF62D69A)
 const val MIN_SHORT_DURATION_MS = ClipIntelligence.MIN_SHORT_DURATION_MS
 
+@UnstableApi
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
