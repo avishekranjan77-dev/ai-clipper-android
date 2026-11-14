@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Build
 import android.provider.MediaStore
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -66,6 +67,10 @@ fun GeneratedClipReviewPanel(
     var busy by remember { mutableStateOf(false) }
     var savedCount by remember { mutableIntStateOf(0) }
     var editingIndex by remember { mutableIntStateOf(-1) }
+    var searchQuery by remember { mutableStateOf("") }
+    val visibleClips = reviewClips.mapIndexed { index, clip -> index to clip }.filter { (_, clip) ->
+        searchQuery.isBlank() || clip.title.contains(searchQuery, ignoreCase = true) || clip.reason.contains(searchQuery, ignoreCase = true)
+    }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(reviewClips, selectedIndex) {
@@ -85,6 +90,17 @@ fun GeneratedClipReviewPanel(
             modifier = Modifier.fillMaxWidth().height(250.dp).background(Color.Black, RoundedCornerShape(12.dp))
         )
         Text("Previewing clip ${selectedIndex + 1} of ${reviewClips.size}", color = Color.White, fontSize = 12.sp)
+        BasicTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it.take(100) },
+            modifier = Modifier.fillMaxWidth().background(Color(0xFF22242C), RoundedCornerShape(10.dp)).padding(11.dp),
+            textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 12.sp),
+            singleLine = true,
+            decorationBox = { inner ->
+                if (searchQuery.isEmpty()) Text("Find clips by AI title or reason…", color = Color(0xFF9295A1), fontSize = 12.sp)
+                inner()
+            }
+        )
         if (editingIndex in reviewClips.indices) {
             ClipAdjustmentEditor(
                 clip = reviewClips[editingIndex],
@@ -101,7 +117,9 @@ fun GeneratedClipReviewPanel(
             )
         }
         LazyColumn(modifier = Modifier.fillMaxWidth().height(230.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            itemsIndexed(reviewClips) { index, clip ->
+            itemsIndexed(visibleClips) { _, entry ->
+                val index = entry.first
+                val clip = entry.second
                 Row(Modifier.fillMaxWidth().background(if (index == selectedIndex) Color(0xFF29263F) else Color(0xFF22242C), RoundedCornerShape(10.dp)).padding(9.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                     Column(Modifier.weight(1f)) {
                         Text(clip.title, color = Color.White, fontSize = 12.sp, maxLines = 1)
