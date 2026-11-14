@@ -168,7 +168,7 @@ private fun renderAdjustedClip(context: Context, clip: GeneratedClip, zoom: Floa
     val completed = AtomicBoolean(false)
     val transformer = Transformer.Builder(context).addListener(object : Transformer.Listener {
         override fun onCompleted(composition: androidx.media3.transformer.Composition, exportResult: ExportResult) {
-            if (completed.compareAndSet(false, true)) onComplete(GeneratedClip(output, clip.startMs + start, clip.startMs + end, outputAspect, clip.title, clip.reason, clip.score))
+            if (completed.compareAndSet(false, true)) onComplete(GeneratedClip(output, clip.startMs + start, clip.startMs + end, outputAspect, clip.title, clip.reason, clip.score, clip.sourceName))
         }
         override fun onError(composition: androidx.media3.transformer.Composition, exportResult: ExportResult, exportException: ExportException) {
             if (completed.compareAndSet(false, true)) { output.delete(); onFailure("Adjustment render failed: ${exportException.localizedMessage ?: "unknown error"}") }
