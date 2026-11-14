@@ -146,9 +146,8 @@ private fun renderAdjustedClip(context: Context, clip: GeneratedClip, zoom: Floa
     val output = File(context.filesDir, "adjusted_clip_${System.currentTimeMillis()}.mp4")
     val clipping = MediaItem.ClippingConfiguration.Builder().setStartPositionMs(start).setEndPositionMs(end).build()
     val item = MediaItem.Builder().setUri(android.net.Uri.fromFile(source)).setClippingConfiguration(clipping).build()
-    val frameWidthPx = if (outputAspect == "16:9") 1920f else 1080f
-    val frameHeightPx = when (outputAspect) { "1:1" -> 1080f; "16:9" -> 1080f; else -> 1920f }
-    val framing = MatrixTransformation { Matrix().apply { postScale(zoom, zoom); postTranslate(horizontal * frameWidthPx / 2f, vertical * frameHeightPx / 2f) } }
+    // Media3 MatrixTransformation uses normalized device coordinates (-1..1), not pixels.
+    val framing = MatrixTransformation { Matrix().apply { postScale(zoom, zoom); postTranslate(horizontal * 0.32f, vertical * 0.32f) } }
     val videoEffects = mutableListOf<androidx.media3.common.Effect>()
     when (outputAspect) {
         "9:16" -> videoEffects.add(Presentation.createForWidthAndHeight(1080, 1920, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
