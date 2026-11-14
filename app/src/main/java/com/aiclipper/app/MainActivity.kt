@@ -371,7 +371,7 @@ private fun ClipperHome(context: Context) {
                             Spacer(Modifier.height(7.dp))
                             androidx.compose.material3.LinearProgressIndicator(progress = { processingProgress }, modifier = Modifier.fillMaxWidth(), color = Accent)
                             Spacer(Modifier.height(5.dp))
-                            Text("Analysis, editing and rendering are running automatically. Controls stay disabled until the finished clips are ready.", color = Muted, fontSize = 9.sp)
+                            Text("Analysis, editing and rendering are running automatically. Keep the app open until the finished clips are ready.", color = Muted, fontSize = 9.sp)
                         }
                     } else {
                         Button(
