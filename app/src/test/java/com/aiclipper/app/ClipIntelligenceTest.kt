@@ -63,4 +63,19 @@ class ClipIntelligenceTest {
         assertTrue(merged.all { it.startMs >= 0L && it.endMs <= 120_000L })
     }
 
+
+    @Test fun sparseVisualSignalsStillProduceFallbackCandidates() {
+        val moments = ClipIntelligence.selectMoments(
+            faceMoments = listOf(300_000L),
+            sceneMoments = emptyList(),
+            speechCaptions = emptyList(),
+            audioEnergy = emptyList(),
+            durationMs = 600_000L,
+            requestedCount = 8
+        )
+        assertEquals(8, moments.size)
+        val ranges = ClipIntelligence.buildExportRanges(moments, 600_000L)
+        assertTrue(ranges.zipWithNext().all { (a, b) -> a.endMs <= b.startMs })
+    }
+
 }
