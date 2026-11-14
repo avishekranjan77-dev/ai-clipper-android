@@ -538,7 +538,7 @@ private fun ClipperHome(context: Context) {
                                         exportSuggestedClips(
                                             context, uri, moments, durationMs, faceTrack, faceLayouts,
                                             twoPersonSplitScreen, speakerTurns, captionText, speechCaptions,
-                                            captionStyle, usableRanges, semanticHighlights, outputAspect,
+                                            captionStyle, usableRanges, semanticHighlights, outputAspect, selectedVideoName ?: "Imported video",
                                             onProgress = { value ->
                                                 scope.launch {
                                                     processingProgress = 0.70f + value * 0.30f
@@ -916,6 +916,7 @@ private suspend fun exportSuggestedClips(
     preferredRanges: List<ClipRange>,
     highlights: List<SemanticHighlight>,
     outputAspect: String,
+    sourceName: String,
     onProgress: (Float) -> Unit,
     onComplete: (List<GeneratedClip>) -> Unit,
     onError: (String) -> Unit
@@ -1000,7 +1001,8 @@ private suspend fun exportSuggestedClips(
                             output, startMs, endMs, outputAspect,
                             matchingHighlight?.title ?: "AI highlight ${index + 1}",
                             matchingHighlight?.reason.orEmpty(),
-                            matchingHighlight?.score ?: 0
+                            matchingHighlight?.score ?: 0,
+                            sourceName
                         )
                     )
                     index++
