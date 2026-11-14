@@ -35,7 +35,7 @@ object SemanticHighlightEngine {
     private const val MIN_MODEL_BYTES = 500L * 1024L * 1024L
     private const val MIN_CLIP_MS = 60_000L
     private const val MAX_CLIP_MS = 180_000L
-    private const val WINDOW_MS = 120_000L
+    private const val WINDOW_MS = 180_000L
     private const val STEP_MS = 60_000L
 
     fun isModelInstalled(context: Context): Boolean {
