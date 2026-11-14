@@ -889,8 +889,19 @@ private suspend fun exportSuggestedClips(
             "16:9" -> videoEffects.add(Presentation.createForWidthAndHeight(1920, 1080, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
             // Original keeps the source video's dimensions and aspect ratio.
         }
-        val clipCues = speechCaptions.filter { it.endMs > startMs && it.startMs < endMs }.map {
-            CaptionCue((it.startMs - startMs).coerceAtLeast(0L), (it.endMs - startMs).coerceAtMost(endMs - startMs), it.text)
+        val clipCues = speechCaptions.filter { it.endMs > startMs && it.startMs < endMs }.map { cue ->
+            CaptionCue(
+                (cue.startMs - startMs).coerceAtLeast(0L),
+                (cue.endMs - startMs).coerceAtMost(endMs - startMs),
+                cue.text,
+                cue.words.filter { word -> word.endMs > startMs && word.startMs < endMs }.map { word ->
+                    CaptionWord(
+                        (word.startMs - startMs).coerceAtLeast(0L),
+                        (word.endMs - startMs).coerceAtMost(endMs - startMs),
+                        word.text
+                    )
+                }
+            )
         }
         if (clipCues.isNotEmpty()) {
             videoEffects.add(OverlayEffect(listOf(TimedCaptionOverlay(clipCues, captionStyle, faceLayouts, startMs))))
