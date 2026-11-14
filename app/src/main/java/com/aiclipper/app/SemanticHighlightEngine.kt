@@ -196,6 +196,7 @@ object SemanticHighlightEngine {
             modelDispatcher.close()
             modelExecutor.shutdown()
         }
+    }
 
     /**
      * Second pass compares candidate summaries from every transcript window together.
