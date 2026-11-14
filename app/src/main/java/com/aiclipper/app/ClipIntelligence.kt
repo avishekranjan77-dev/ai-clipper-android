@@ -16,12 +16,15 @@ object ClipIntelligence {
         speechCaptions: List<CaptionCue>,
         audioEnergy: List<AudioEnergyPoint>,
         durationMs: Long,
-        requestedCount: Int
+        requestedCount: Int,
+        clipDurationMs: Long = MIN_SHORT_DURATION_MS
     ): List<Long> {
         if (durationMs < MIN_SHORT_DURATION_MS || requestedCount <= 0) return emptyList()
-        val maxByDuration = (durationMs / MIN_SHORT_DURATION_MS).toInt().coerceAtLeast(1)
+        val clipLength = clipDurationMs.coerceAtLeast(MIN_SHORT_DURATION_MS)
+        if (durationMs < clipLength) return emptyList()
+        val maxByDuration = (durationMs / clipLength).toInt().coerceAtLeast(1)
         val target = requestedCount.coerceIn(1, 30).coerceAtMost(maxByDuration)
-        val latestMoment = (durationMs - (MIN_SHORT_DURATION_MS - LEAD_IN_MS)).coerceAtLeast(0L)
+        val latestMoment = (durationMs - (clipLength - LEAD_IN_MS)).coerceAtLeast(0L)
         val candidates = linkedSetOf<Long>()
         faceMoments.forEach { candidates.add(it.coerceIn(0L, latestMoment)) }
         sceneMoments.forEach { candidates.add(it.coerceIn(0L, latestMoment)) }
@@ -55,7 +58,7 @@ object ClipIntelligence {
 
         fun score(moment: Long): Double {
             val start = (moment - LEAD_IN_MS).coerceAtLeast(0L)
-            val end = (start + MIN_SHORT_DURATION_MS).coerceAtMost(durationMs)
+            val end = (start + clipLength).coerceAtMost(durationMs)
             val cues = speechCaptions.filter { it.endMs > start && it.startMs < end }
             val transcript = cues.joinToString(" ") { it.text.lowercase(Locale.US) }
             val words = transcript.split(Regex("\\s+")).count { it.isNotBlank() }
@@ -85,7 +88,7 @@ object ClipIntelligence {
             val start = (moment - LEAD_IN_MS).coerceAtLeast(0L)
             val overlaps = selected.any { existing ->
                 val existingStart = (existing - LEAD_IN_MS).coerceAtLeast(0L)
-                kotlin.math.abs(existingStart - start) < MIN_SHORT_DURATION_MS
+                kotlin.math.abs(existingStart - start) < clipLength
             }
             if (!overlaps) selected.add(moment)
         }
@@ -94,14 +97,14 @@ object ClipIntelligence {
             for (index in 0 until target) {
                 if (selected.size >= target) break
                 val fallbackStart = if (target == 1) {
-                    (durationMs - MIN_SHORT_DURATION_MS) / 2L
+                    (durationMs - clipLength) / 2L
                 } else {
-                    ((durationMs - MIN_SHORT_DURATION_MS) * index.toLong() / (target - 1).toLong())
+                    ((durationMs - clipLength) * index.toLong() / (target - 1).toLong())
                 }
                 val fallbackMoment = (fallbackStart + LEAD_IN_MS).coerceAtMost(latestMoment)
                 val overlaps = selected.any { existing ->
                     val existingStart = (existing - LEAD_IN_MS).coerceAtLeast(0L)
-                    kotlin.math.abs(existingStart - fallbackStart) < MIN_SHORT_DURATION_MS
+                    kotlin.math.abs(existingStart - fallbackStart) < clipLength
                 }
                 if (!overlaps) selected.add(fallbackMoment)
             }
@@ -118,23 +121,25 @@ object ClipIntelligence {
         preferredRanges: List<ClipRange>,
         fallbackMoments: List<Long>,
         durationMs: Long,
-        requestedCount: Int
+        requestedCount: Int,
+        clipDurationMs: Long = 90_000L
     ): List<ClipRange> {
         if (durationMs < MIN_SHORT_DURATION_MS || requestedCount <= 0) return emptyList()
-        val availableSlots = (durationMs / MIN_SHORT_DURATION_MS).toInt().coerceAtLeast(1)
+        val clipLength = clipDurationMs.coerceAtLeast(MIN_SHORT_DURATION_MS)
+        val availableSlots = (durationMs / clipLength).toInt().coerceAtLeast(1)
         val target = requestedCount.coerceIn(1, 30).coerceAtMost(availableSlots)
         val chosen = mutableListOf<ClipRange>()
         preferredRanges.forEach { range ->
             if (chosen.size < target &&
                 range.startMs >= 0L &&
                 range.endMs <= durationMs &&
-                range.durationMs in MIN_SHORT_DURATION_MS..90_000L &&
+                range.durationMs in MIN_SHORT_DURATION_MS..clipLength &&
                 chosen.none { range.startMs < it.endMs && range.endMs > it.startMs }
             ) {
                 chosen.add(range)
             }
         }
-        for (fallback in buildExportRanges(fallbackMoments, durationMs)) {
+        for (fallback in buildExportRanges(fallbackMoments, durationMs, clipLength)) {
             if (chosen.size >= target) break
             if (chosen.none { fallback.startMs < it.endMs && fallback.endMs > it.startMs }) {
                 chosen.add(fallback)
@@ -144,13 +149,14 @@ object ClipIntelligence {
     }
 
     /** Produce full-minute export ranges without overlap or out-of-bounds timestamps. */
-    fun buildExportRanges(moments: List<Long>, durationMs: Long): List<ClipRange> {
-        if (durationMs < MIN_SHORT_DURATION_MS) return emptyList()
-        val latestStart = durationMs - MIN_SHORT_DURATION_MS
+    fun buildExportRanges(moments: List<Long>, durationMs: Long, clipDurationMs: Long = MIN_SHORT_DURATION_MS): List<ClipRange> {
+        val clipLength = clipDurationMs.coerceAtLeast(MIN_SHORT_DURATION_MS)
+        if (durationMs < clipLength) return emptyList()
+        val latestStart = durationMs - clipLength
         val ranges = mutableListOf<ClipRange>()
         moments.distinct().sorted().forEach { moment ->
             val start = (moment - LEAD_IN_MS).coerceAtLeast(0L).coerceAtMost(latestStart)
-            val end = start + MIN_SHORT_DURATION_MS
+            val end = start + clipLength
             if (ranges.none { start < it.endMs && end > it.startMs }) {
                 ranges.add(ClipRange(start, end))
             }
