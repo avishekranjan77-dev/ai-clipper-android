@@ -17,6 +17,13 @@ import java.nio.ByteOrder
 import java.util.zip.ZipInputStream
 
 data class CaptionCue(val startMs: Long, val endMs: Long, val text: String)
+data class AudioEnergyPoint(val timeMs: Long, val rms: Float)
+data class SpeechAnalysisResult(val captions: List<CaptionCue>, val audioEnergy: List<AudioEnergyPoint>)
+
+private class EnergyBucket {
+    var sumSquares: Double = 0.0
+    var sampleCount: Long = 0L
+}
 
 object SpeechCaptionEngine {
     private const val MODEL_NAME = "vosk-model-small-en-us-0.15"
@@ -87,7 +94,7 @@ object SpeechCaptionEngine {
         return target
     }
 
-    fun transcribe(context: Context, source: Uri, onProgress: (Float) -> Unit): List<CaptionCue> {
+    fun transcribe(context: Context, source: Uri, onProgress: (Float) -> Unit): SpeechAnalysisResult {
         val modelDir = File(context.filesDir, MODEL_NAME)
         if (!File(modelDir, "conf/model.conf").isFile) {
             throw IllegalStateException("Download the English speech model first")
@@ -98,6 +105,7 @@ object SpeechCaptionEngine {
         val recognizer = Recognizer(model, TARGET_RATE.toFloat())
         recognizer.setWords(true)
         val rawWords = mutableListOf<CaptionCue>()
+        val energyBuckets = sortedMapOf<Long, EnergyBucket>()
         try {
             extractor.setDataSource(context, source, null)
             var audioTrack = -1
@@ -156,10 +164,17 @@ object SpeechCaptionEngine {
                             val pcm = outputBuffer.slice().order(ByteOrder.LITTLE_ENDIAN)
                             val mono16k = java.io.ByteArrayOutputStream()
                             val frameCount = pcm.remaining() / (2 * channels)
+                            var frameIndex = 0
                             repeat(frameCount) {
                                 var sum = 0
                                 repeat(channels) { sum += pcm.short.toInt() }
                                 val mono = (sum / channels).coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                                val sampleTimeMs = info.presentationTimeUs.coerceAtLeast(0L) / 1000L +
+                                    frameIndex.toLong() * 1000L / sampleRate.toLong().coerceAtLeast(1L)
+                                val bucket = energyBuckets.getOrPut(sampleTimeMs / 1000L) { EnergyBucket() }
+                                bucket.sumSquares += mono.toDouble() * mono.toDouble()
+                                bucket.sampleCount++
+                                frameIndex++
                                 phase += TARGET_RATE.toLong()
                                 if (phase >= sampleRate.toLong()) {
                                     phase -= sampleRate.toLong()
@@ -185,7 +200,12 @@ object SpeechCaptionEngine {
                 }
             }
             collectWords(recognizer.finalResult, rawWords)
-            return groupWords(rawWords)
+            val energy = energyBuckets.map { (second, bucket) ->
+                val rms = if (bucket.sampleCount == 0L) 0.0 else
+                    kotlin.math.sqrt(bucket.sumSquares / bucket.sampleCount.toDouble()) / 32768.0
+                AudioEnergyPoint(second * 1000L, rms.toFloat())
+            }
+            return SpeechAnalysisResult(groupWords(rawWords), energy)
         } finally {
             try { codec?.stop() } catch (_: Exception) {}
             codec?.release()
