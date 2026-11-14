@@ -535,19 +535,22 @@ private fun buildClipMoments(
 
 private fun Player.isReadyForDuration(): Boolean = playbackState == Player.STATE_READY && duration > 0
 
-private data class FaceTrackPoint(val timeMs: Long, val centerX: Float, val faceCount: Int, val aspectRatio: Float)
+private data class FaceTrackPoint(val timeMs: Long, val centerX: Float, val faceCount: Int, val aspectRatio: Float, val primaryFaceId: Int?)
 private data class FaceScanResult(val track: List<FaceTrackPoint>, val picks: List<Long>)
 
 private fun analyseFaces(context: Context, uri: Uri, durationMs: Long): FaceScanResult {
     if (durationMs < 3000L) return FaceScanResult(emptyList(), emptyList())
     val options = FaceDetectorOptions.Builder()
-        .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
+        .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
+        .setMinFaceSize(0.06f)
         .enableTracking()
         .build()
     val detector = FaceDetection.getClient(options)
     val retriever = MediaMetadataRetriever()
     val points = mutableListOf<FaceTrackPoint>()
     val scored = mutableListOf<Pair<Long, Double>>()
+    var primaryFaceId: Int? = null
+    var previousCenterX = 0.5f
     try {
         retriever.setDataSource(context, uri)
         var time = 700L
@@ -559,10 +562,24 @@ private fun analyseFaces(context: Context, uri: Uri, durationMs: Long): FaceScan
                 if (sample !== frame) frame.recycle()
                 val faces = Tasks.await(detector.process(InputImage.fromBitmap(sample, 0)))
                 if (faces.isNotEmpty()) {
-                    // Average all detected face centres so conversations stay framed as a group.
-                    val center = (faces.map { it.boundingBox.centerX().toFloat() }.average().toFloat() / sample.width)
-                        .coerceIn(0.05f, 0.95f)
-                    points.add(FaceTrackPoint(time, center, faces.size, sample.width.toFloat() / sample.height.toFloat()))
+                    val faceCenters = faces.map { face ->
+                        face.boundingBox.centerX().toFloat() / sample.width
+                    }
+                    val selectedFace = faces.firstOrNull { it.trackingId == primaryFaceId }
+                        ?: faces.minByOrNull { kotlin.math.abs(it.boundingBox.centerX().toFloat() / sample.width - previousCenterX) }
+                        ?: faces.maxBy { it.boundingBox.width() * it.boundingBox.height() }
+                    if (faces.size == 1) primaryFaceId = selectedFace.trackingId
+                    val center = if (faces.size > 1) {
+                        // Keep a conversation group in frame; larger, nearer faces get a little more weight.
+                        val weights = faces.map { face ->
+                            kotlin.math.sqrt((face.boundingBox.width().toFloat() * face.boundingBox.height()).coerceAtLeast(1f))
+                        }
+                        (faceCenters.indices.sumOf { i -> faceCenters[i] * weights[i] } / weights.sum()).toFloat()
+                    } else {
+                        selectedFace.boundingBox.centerX().toFloat() / sample.width
+                    }.coerceIn(0.05f, 0.95f)
+                    previousCenterX = center
+                    points.add(FaceTrackPoint(time, center, faces.size, sample.width.toFloat() / sample.height.toFloat(), selectedFace.trackingId))
                     val totalFaceArea = faces.sumOf {
                         it.boundingBox.width().toDouble() * it.boundingBox.height()
                     } / (sample.width.toDouble() * sample.height)
