@@ -19,13 +19,20 @@ import kotlin.math.roundToInt
  */
 @UnstableApi
 internal class TwoPersonSplitScreenEffect(
-    private val samples: List<FaceLayoutSample>
+    private val samples: List<FaceLayoutSample>,
+    private val speakerTurns: List<SpeakerTurn>,
+    private val speakerToFace: Map<Int, Int>,
+    private val clipStartMs: Long
 ) : GlEffect {
     override fun toGlShaderProgram(context: Context, useHdr: Boolean) =
-        ByteBufferGlEffect<ByteBuffer>(SplitProcessor(samples)).toGlShaderProgram(context, useHdr)
+        ByteBufferGlEffect<ByteBuffer>(SplitProcessor(samples, speakerTurns, speakerToFace, clipStartMs)).toGlShaderProgram(context, useHdr)
 
-    private class SplitProcessor(samples: List<FaceLayoutSample>) :
-        ByteBufferGlEffect.Processor<ByteBuffer> {
+    private class SplitProcessor(
+        samples: List<FaceLayoutSample>,
+        private val speakerTurns: List<SpeakerTurn>,
+        private val speakerToFace: Map<Int, Int>,
+        private val clipStartMs: Long
+    ) : ByteBufferGlEffect.Processor<ByteBuffer> {
         private val timeline = samples.filter { it.faces.size >= 2 }.sortedBy { it.timeMs }
         private var sourceWidth = 0
         private var sourceHeight = 0
@@ -50,9 +57,15 @@ internal class TwoPersonSplitScreenEffect(
             image: ByteBufferGlEffect.Image,
             presentationTimeUs: Long
         ): ByteBuffer {
-            val selected = nearestSample(presentationTimeUs / 1000L)
-            val leftFace = selected?.faces?.getOrNull(0) ?: FaceCenter(0.30f, 0.5f)
-            val rightFace = selected?.faces?.getOrNull(1) ?: FaceCenter(0.70f, 0.5f)
+            val absoluteMs = clipStartMs + presentationTimeUs / 1000L
+            val selected = nearestSample(absoluteMs)
+            val faces = selected?.faces ?: emptyList()
+            val firstFace = faces.getOrNull(0) ?: FaceCenter(0.30f, 0.5f)
+            val secondFace = faces.getOrNull(1) ?: FaceCenter(0.70f, 0.5f)
+            val activeSpeaker = speakerTurns.firstOrNull { absoluteMs in it.startMs..it.endMs }?.speakerId
+            val activeFaceIndex = activeSpeaker?.let { speakerToFace[it] } ?: 0
+            val topFace = if (activeFaceIndex == 1) secondFace else firstFace
+            val bottomFace = if (activeFaceIndex == 1) firstFace else secondFace
             val output = ByteBuffer.allocateDirect(image.width * image.height * 4)
             val input = image.pixelBuffer
             val panelAspect = image.width.toFloat() / (image.height / 2f)
@@ -68,7 +81,7 @@ internal class TwoPersonSplitScreenEffect(
             val halfHeight = image.height / 2
             for (y in 0 until image.height) {
                 val isTopPanel = y >= halfHeight
-                val face = if (isTopPanel) leftFace else rightFace
+                val face = if (isTopPanel) topFace else bottomFace
                 val panelY = if (isTopPanel) y - halfHeight else y
                 val panelV = panelY.toFloat() / halfHeight.toFloat().coerceAtLeast(1f)
                 val centerY = 1f - face.y
