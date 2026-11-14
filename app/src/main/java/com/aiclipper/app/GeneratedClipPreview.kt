@@ -126,12 +126,12 @@ fun GeneratedClipReviewPanel(
                         Text("Clip ${index + 1} • ${clip.durationMs / 1000}s • AI score ${clip.score}", color = Color(0xFF9295A1), fontSize = 10.sp, maxLines = 1)
                         if (clip.reason.isNotBlank()) Text(clip.reason, color = Color(0xFFB5B7C1), fontSize = 9.sp, maxLines = 2)
                     }
-                    Button(onClick = { selectedIndex = index; player.seekTo(0); player.play() }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF343044))) {
+                    Button(onClick = { selectedIndex = index; player.seekTo(0); player.play() }, enabled = !busy, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF343044))) {
                         androidx.compose.material3.Icon(Icons.Default.PlayArrow, contentDescription = null)
                         Text("Preview")
                     }
                     Spacer(Modifier.size(4.dp))
-                    Button(onClick = { selectedIndex = index; editingIndex = index; player.pause() }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF343044))) {
+                    Button(onClick = { selectedIndex = index; editingIndex = index; player.pause() }, enabled = !busy, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF343044))) {
                         androidx.compose.material3.Icon(Icons.Default.Tune, contentDescription = "Adjust clip")
                         Text("Adjust")
                     }
