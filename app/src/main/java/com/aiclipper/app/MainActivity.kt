@@ -439,50 +439,65 @@ private fun ClipperHome(context: Context) {
                                 scope.launch {
                                     try {
                                         if (!speechModelReady) {
-                                            status = "Installing offline speech recognition…"
-                                            try {
-                                                withContext(Dispatchers.IO) { SpeechCaptionEngine.downloadModel(context) {} }
-                                                speechModelReady = true
-                                            } catch (_: Exception) {
-                                                speechModelReady = false
-                                            }
-                                        }
-                                        var speakerRecognitionAvailable = speakerModelReady
-                                        if (!speakerModelReady) {
-                                            status = "Installing optional speaker recognition…"
-                                            try {
-                                                withContext(Dispatchers.IO) { SpeechCaptionEngine.downloadSpeakerModel(context) {} }
-                                                speakerModelReady = true
-                                                speakerRecognitionAvailable = true
-                                            } catch (_: Exception) {
-                                                // Speaker diarization is optional. Continue with face tracking if its model is unavailable.
-                                                speakerRecognitionAvailable = false
-                                            }
-                                        }
-
-                                        status = if (speakerRecognitionAvailable) "Transcribing speech and analysing audio…" else "Transcribing speech (speaker model unavailable; face tracking remains enabled)…"
-                                        val speech = if (speechModelReady) {
+                                            status = "Connecting to the speech-model server…"
+                                            processingProgress = 0.01f
                                             try {
                                                 withContext(Dispatchers.IO) {
-                                                    SpeechCaptionEngine.transcribe(context, uri) { value -> scope.launch { processingProgress = value * 0.18f } }
+                                                    SpeechCaptionEngine.downloadModel(context) { value ->
+                                                        scope.launch {
+                                                            processingProgress = 0.01f + value * 0.14f
+                                                            status = if (value < 0.90f) {
+                                                                "Downloading offline speech recognition model… ${(value * 100).toInt()}%"
+                                                            } else {
+                                                                "Verifying and installing speech recognition model…"
+                                                            }
+                                                        }
+                                                    }
                                                 }
-                                            } catch (_: Exception) {
-                                                status = "Speech analysis unavailable; continuing with visual scene and face analysis…"
-                                                SpeechAnalysisResult(emptyList(), emptyList(), emptyList())
+                                                speechModelReady = SpeechCaptionEngine.isModelInstalled(context)
+                                                if (!speechModelReady) throw IllegalStateException("Speech model installation could not be verified.")
+                                            } catch (error: Exception) {
+                                                speechModelReady = false
+                                                throw IllegalStateException(
+                                                    "Speech recognition setup failed: ${error.localizedMessage ?: error.javaClass.simpleName}. Check your internet connection and free storage, then retry.",
+                                                    error
+                                                )
                                             }
+                                        }
+                                        processingProgress = 0.15f
+                                        val speakerRecognitionAvailable = speakerModelReady
+                                        status = if (speakerRecognitionAvailable) {
+                                            "Transcribing speech and analysing audio…"
                                         } else {
-                                            status = "Speech model unavailable; continuing with visual scene and face analysis…"
-                                            SpeechAnalysisResult(emptyList(), emptyList(), emptyList())
+                                            "Transcribing speech and analysing audio (optional speaker separation skipped)…"
+                                        }
+                                        val speech = try {
+                                            withContext(Dispatchers.IO) {
+                                                SpeechCaptionEngine.transcribe(context, uri) { value ->
+                                                    scope.launch {
+                                                        processingProgress = 0.15f + value * 0.18f
+                                                        status = "Recognising speech and creating timed captions… ${(value * 100).toInt()}%"
+                                                    }
+                                                }
+                                            }
+                                        } catch (error: Exception) {
+                                            throw IllegalStateException(
+                                                "Speech recognition failed: ${error.localizedMessage ?: error.javaClass.simpleName}. The clip was not rendered without its requested captions.",
+                                                error
+                                            )
+                                        }
+                                        if (speech.captions.isEmpty()) {
+                                            status = "No speech was detected. Continuing with visual highlights; spoken captions will be empty."
                                         }
                                         speechCaptions = speech.captions
                                         speakerTurns = speech.speakerTurns
                                         audioEnergy = speech.audioEnergy
-                                        processingProgress = 0.18f
+                                        processingProgress = 0.33f
 
                                         status = "Tracking faces and scene changes…"
                                         val faceResult = try {
                                             withContext(Dispatchers.Default) {
-                                                analyseFaces(context, uri, durationMs) { value -> scope.launch { processingProgress = 0.18f + value * 0.12f } }
+                                                analyseFaces(context, uri, durationMs) { value -> scope.launch { processingProgress = 0.33f + value * 0.12f } }
                                             }
                                         } catch (_: Exception) {
                                             FaceScanResult(emptyList(), emptyList(), emptyList())
@@ -492,12 +507,12 @@ private fun ClipperHome(context: Context) {
                                         facePicks = faceResult.picks
                                         scenePicks = try {
                                             withContext(Dispatchers.Default) {
-                                                findScenePicks(context, uri, durationMs) { value -> scope.launch { processingProgress = 0.30f + value * 0.08f } }
+                                                findScenePicks(context, uri, durationMs) { value -> scope.launch { processingProgress = 0.45f + value * 0.08f } }
                                             }
                                         } catch (_: Exception) {
                                             emptyList()
                                         }
-                                        processingProgress = 0.38f
+                                        processingProgress = 0.53f
 
                                         var ranges: List<ClipRange> = emptyList()
                                         if (semanticModelReady && speechCaptions.isNotEmpty()) {
@@ -508,7 +523,7 @@ private fun ClipperHome(context: Context) {
                                                     facePicks, scenePicks, audioEnergy, speakerTurns, highlightFocus,
                                                     maxClipDurationMs = maxClipDurationSeconds.toLong() * 1000L,
                                                     onProgress = { value ->
-                                                        scope.launch { processingProgress = 0.38f + value * 0.30f }
+                                                        scope.launch { processingProgress = 0.53f + value * 0.22f }
                                                     },
                                                     onStage = { stage ->
                                                         scope.launch { status = stage }
@@ -520,7 +535,7 @@ private fun ClipperHome(context: Context) {
                                             } catch (_: Exception) {
                                                 semanticHighlights = emptyList()
                                                 status = "Semantic AI unavailable on this run; using offline signal-based selection…"
-                                                processingProgress = 0.60f
+                                                processingProgress = 0.75f
                                             }
                                         } else {
                                             status = "Ranking the strongest moments…"
@@ -546,7 +561,7 @@ private fun ClipperHome(context: Context) {
                                         }
 
                                         status = "Rendering edited clips…"
-                                        processingProgress = 0.70f
+                                        processingProgress = 0.75f
 
                                         exportSuggestedClips(
                                             context, uri, moments, durationMs, faceTrack, faceLayouts,
@@ -554,7 +569,7 @@ private fun ClipperHome(context: Context) {
                                             captionStyle, usableRanges, semanticHighlights, outputAspect, selectedVideoName ?: "Imported video",
                                             onProgress = { value ->
                                                 scope.launch {
-                                                    processingProgress = 0.70f + value * 0.30f
+                                                    processingProgress = 0.75f + value * 0.25f
                                                 }
                                             },
                                             onComplete = { clips ->
