@@ -116,6 +116,9 @@ private fun ClipperHome(context: Context) {
     var endMs by remember { mutableLongStateOf(0L) }
     var portrait by remember { mutableStateOf(true) }
     var captionText by remember { mutableStateOf("") }
+    var speechCaptions by remember { mutableStateOf<List<CaptionCue>>(emptyList()) }
+    var speechModelReady by remember { mutableStateOf(SpeechCaptionEngine.isModelInstalled(context)) }
+    var speechBusy by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Choose a video to start editing") }
     var exportProgress by remember { mutableFloatStateOf(0f) }
@@ -282,7 +285,7 @@ private fun ClipperHome(context: Context) {
                                 status = "Creating ${facePicks.size} AI-selected clips…"
                                 scope.launch {
                                     exportSuggestedClips(
-                                        context, uri, facePicks, durationMs, faceTrack, captionText,
+                                        context, uri, facePicks, durationMs, faceTrack, captionText, speechCaptions,
                                         onProgress = { exportProgress = it },
                                         onComplete = { message -> exporting = false; status = message },
                                         onError = { message -> exporting = false; status = message }
@@ -333,7 +336,45 @@ private fun ClipperHome(context: Context) {
                             inner()
                         }
                     )
-                    Text("Adds a styled caption overlay. Automatic word-by-word speech transcription is a later step.", color = Muted, fontSize = 10.sp)
+                    Button(
+                        onClick = {
+                            val uri = selectedVideo ?: return@Button
+                            speechBusy = true
+                            status = if (speechModelReady) "Transcribing selected video audio offline…" else "Downloading the optional English model…"
+                            scope.launch {
+                                try {
+                                    if (!speechModelReady) {
+                                        withContext(Dispatchers.IO) { SpeechCaptionEngine.downloadModel(context) {} }
+                                        speechModelReady = true
+                                        status = "English model installed. Tap Generate captions again."
+                                    } else {
+                                        val cues = withContext(Dispatchers.IO) { SpeechCaptionEngine.transcribe(context, uri) {} }
+                                        speechCaptions = cues
+                                        status = if (cues.isEmpty()) "No clear speech detected." else "Generated " + cues.size + " timed caption lines."
+                                    }
+                                } catch (error: Exception) {
+                                    status = "Caption generation failed: " + (error.localizedMessage ?: "unknown error")
+                                } finally {
+                                    speechBusy = false
+                                }
+                            }
+                        },
+                        enabled = !speechBusy,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF292B34))
+                    ) {
+                        if (speechBusy) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        else Icon(Icons.Default.AutoAwesome, contentDescription = null)
+                        Spacer(Modifier.size(6.dp))
+                        Text(if (speechBusy) "Working…" else if (speechModelReady) "Generate timed captions" else "Download English model")
+                    }
+                    Text(
+                        if (speechCaptions.isNotEmpty()) "Timed captions ready: " + speechCaptions.size + " lines"
+                        else if (speechModelReady) "Speech recognition runs offline on this phone."
+                        else "First download needs internet and extra storage; transcription then runs offline.",
+                        color = if (speechCaptions.isNotEmpty()) Green else Muted,
+                        fontSize = 10.sp
+                    )
                 }
                 Button(
                     onClick = {
@@ -343,7 +384,7 @@ private fun ClipperHome(context: Context) {
                         exportProgress = 0f
                         status = "Preparing your clip…"
                         scope.launch {
-                            exportVideo(context, uri, startMs, endMs, portrait, captionText, faceTrack,
+                            exportVideo(context, uri, startMs, endMs, portrait, captionText, faceTrack, speechCaptions,
                                 onProgress = { exportProgress = it },
                                 onComplete = { message -> exporting = false; status = message },
                                 onError = { message -> exporting = false; status = message })
@@ -534,6 +575,7 @@ private suspend fun exportVideo(
     portrait: Boolean,
     caption: String,
     faceTrack: List<FaceTrackPoint>,
+    speechCaptions: List<CaptionCue>,
     onProgress: (Float) -> Unit,
     onComplete: (String) -> Unit,
     onError: (String) -> Unit
@@ -551,7 +593,12 @@ private suspend fun exportVideo(
                 if (faceTrack.isNotEmpty()) videoEffects.add(createFaceTrackingEffect(faceTrack, startMs))
                 videoEffects.add(Presentation.createForWidthAndHeight(1080, 1920, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
             }
-            if (caption.isNotBlank()) {
+            val clipCues = speechCaptions.filter { it.endMs > startMs && it.startMs < endMs }.map {
+                CaptionCue((it.startMs - startMs).coerceAtLeast(0L), (it.endMs - startMs).coerceAtMost(endMs - startMs), it.text)
+            }
+            if (clipCues.isNotEmpty()) {
+                videoEffects.add(OverlayEffect(listOf(TimedCaptionOverlay(clipCues))))
+            } else if (caption.isNotBlank()) {
                 val styledCaption = SpannableString(caption.trim()).apply {
                     setSpan(ForegroundColorSpan(android.graphics.Color.WHITE), 0, length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                 }
@@ -589,6 +636,7 @@ private suspend fun exportSuggestedClips(
     durationMs: Long,
     faceTrack: List<FaceTrackPoint>,
     caption: String,
+    speechCaptions: List<CaptionCue>,
     onProgress: (Float) -> Unit,
     onComplete: (String) -> Unit,
     onError: (String) -> Unit
@@ -619,7 +667,12 @@ private suspend fun exportSuggestedClips(
         val videoEffects = mutableListOf<androidx.media3.common.Effect>()
         if (faceTrack.isNotEmpty()) videoEffects.add(createFaceTrackingEffect(faceTrack, startMs))
         videoEffects.add(Presentation.createForWidthAndHeight(1080, 1920, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
-        if (caption.isNotBlank()) {
+        val clipCues = speechCaptions.filter { it.endMs > startMs && it.startMs < endMs }.map {
+            CaptionCue((it.startMs - startMs).coerceAtLeast(0L), (it.endMs - startMs).coerceAtMost(endMs - startMs), it.text)
+        }
+        if (clipCues.isNotEmpty()) {
+            videoEffects.add(OverlayEffect(listOf(TimedCaptionOverlay(clipCues))))
+        } else if (caption.isNotBlank()) {
             val styled = SpannableString(caption.trim()).apply {
                 setSpan(ForegroundColorSpan(android.graphics.Color.WHITE), 0, length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
