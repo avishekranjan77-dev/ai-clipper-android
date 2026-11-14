@@ -539,9 +539,9 @@ private fun ClipperHome(context: Context) {
                                                 ranges = semanticHighlights.take(requestedClipCount.toInt()).map {
                                                     ClipRange(it.startMs, it.endMs)
                                                 }
-                                            } catch (_: Exception) {
+                                            } catch (error: Exception) {
                                                 semanticHighlights = emptyList()
-                                                status = "Semantic AI unavailable on this run; using offline signal-based selection…"
+                                                status = "On-device AI could not run: ${error.localizedMessage ?: error.javaClass.simpleName}. Using offline signal-based selection…"
                                                 processingProgress = 0.75f
                                             }
                                         } else {
