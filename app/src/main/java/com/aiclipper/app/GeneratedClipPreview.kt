@@ -59,14 +59,15 @@ fun GeneratedClipReviewPanel(
     onError: (String) -> Unit
 ) {
     val player = remember { ExoPlayer.Builder(context).build() }
+    var reviewClips by remember(clips) { mutableStateOf(clips) }
     var selectedIndex by remember { mutableIntStateOf(0) }
     var busy by remember { mutableStateOf(false) }
     var savedCount by remember { mutableIntStateOf(0) }
     var editingIndex by remember { mutableIntStateOf(-1) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(clips, selectedIndex) {
-        val clip = clips.getOrNull(selectedIndex) ?: return@LaunchedEffect
+    LaunchedEffect(reviewClips, selectedIndex) {
+        val clip = reviewClips.getOrNull(selectedIndex) ?: return@LaunchedEffect
         player.setMediaItem(MediaItem.fromUri(android.net.Uri.fromFile(clip.file)))
         player.prepare()
         player.playWhenReady = false
@@ -75,29 +76,29 @@ fun GeneratedClipReviewPanel(
 
     Column(Modifier.fillMaxWidth().background(Color(0xFF15171D), RoundedCornerShape(18.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("REVIEW YOUR AI CLIPS", color = Color.White, fontSize = 14.sp)
-        Text("${clips.size} edited previews ready • Nothing is saved to Gallery until you choose", color = Color(0xFF9295A1), fontSize = 11.sp)
+        Text("${reviewClips.size} edited previews ready • Nothing is saved to Gallery until you choose", color = Color(0xFF9295A1), fontSize = 11.sp)
         AndroidView(
             factory = { PlayerView(it).apply { this.player = player; useController = true } },
             update = { it.player = player },
             modifier = Modifier.fillMaxWidth().height(250.dp).background(Color.Black, RoundedCornerShape(12.dp))
         )
         Text("Previewing clip ${selectedIndex + 1} of ${clips.size}", color = Color.White, fontSize = 12.sp)
-        if (editingIndex in clips.indices) {
+        if (editingIndex in reviewClips.indices) {
             ClipAdjustmentEditor(
-                clip = clips[editingIndex],
+                clip = reviewClips[editingIndex],
                 onCancel = { editingIndex = -1 },
                 onRendered = { replacement ->
-                    val updated = clips.toMutableList()
-                    updated[editingIndex] = replacement
+                    val previous = reviewClips[editingIndex]
+                    reviewClips = reviewClips.toMutableList().also { it[editingIndex] = replacement }
+                    previous.file.delete()
+                    selectedIndex = editingIndex
                     editingIndex = -1
-                    selectedIndex = editingIndex.coerceAtLeast(0)
-                    onError("Adjusted clip rendered. Reopen the preview to review the updated file.")
                 },
                 onError = onError
             )
         }
         LazyColumn(modifier = Modifier.fillMaxWidth().height(230.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            itemsIndexed(clips) { index, clip ->
+            itemsIndexed(reviewClips) { index, clip ->
                 Row(Modifier.fillMaxWidth().background(if (index == selectedIndex) Color(0xFF29263F) else Color(0xFF22242C), RoundedCornerShape(10.dp)).padding(9.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                     Column(Modifier.weight(1f)) {
                         Text("Clip ${index + 1}  •  ${clip.durationMs / 1000}s", color = Color.White, fontSize = 12.sp)
@@ -140,7 +141,7 @@ fun GeneratedClipReviewPanel(
                     var count = 0
                     try {
                         withContext(Dispatchers.IO) {
-                            clips.filter { it.file.exists() }.forEach { clip ->
+                            reviewClips.filter { it.file.exists() }.forEach { clip ->
                                 saveGeneratedClip(context, clip.file)
                                 clip.file.delete()
                                 count++
@@ -152,7 +153,7 @@ fun GeneratedClipReviewPanel(
                     finally { busy = false }
                 }
             },
-            enabled = !busy && clips.any { it.file.exists() },
+            enabled = !busy && reviewClips.any { it.file.exists() },
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B7CFF))
         ) {
