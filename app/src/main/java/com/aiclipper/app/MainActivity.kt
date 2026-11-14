@@ -548,7 +548,7 @@ private fun ClipperHome(context: Context) {
                                     }
                                 }
                             },
-                            enabled = !processing && !semanticBusy && durationMs >= MIN_SHORT_DURATION_MS,
+                            enabled = !processing && !semanticBusy && !importingLink && durationMs >= MIN_SHORT_DURATION_MS,
                             modifier = Modifier.fillMaxWidth().height(54.dp),
                             shape = RoundedCornerShape(16.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Accent)
