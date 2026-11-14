@@ -122,6 +122,7 @@ private fun ClipperHome(context: Context) {
     var portrait by remember { mutableStateOf(true) }
     var captionText by remember { mutableStateOf("") }
     var speechCaptions by remember { mutableStateOf<List<CaptionCue>>(emptyList()) }
+    var audioEnergy by remember { mutableStateOf<List<AudioEnergyPoint>>(emptyList()) }
     var speechModelReady by remember { mutableStateOf(SpeechCaptionEngine.isModelInstalled(context)) }
     var speechBusy by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
@@ -164,6 +165,11 @@ private fun ClipperHome(context: Context) {
     ) { uri ->
         selectedVideo = uri
         hasAnalysedVideo = false
+        speechCaptions = emptyList()
+        audioEnergy = emptyList()
+        faceTrack = emptyList()
+        facePicks = emptyList()
+        scenePicks = emptyList()
         selectedVideoName = uri?.let { queryDisplayName(context, it) }
         status = if (uri == null) "No video selected" else "Video loaded. Preview, trim and export are ready."
     }
@@ -215,6 +221,7 @@ private fun ClipperHome(context: Context) {
                                     selectedVideo = Uri.fromFile(localFile)
                                     selectedVideoName = localFile.name
                                     speechCaptions = emptyList()
+                                    audioEnergy = emptyList()
                                     hasAnalysedVideo = false
                                     faceTrack = emptyList()
                                     facePicks = emptyList()
@@ -351,19 +358,19 @@ private fun ClipperHome(context: Context) {
                     Text(
                         when {
                             durationMs < MIN_SHORT_DURATION_MS -> "Shorts export needs at least 1 minute of source footage. This video is too short for a 60-second Short."
-                            hasAnalysedVideo -> "Choose 1–30 clips. Every AI Short is at least 60 seconds; face, scene and transcript signals rank the highlights."
+                            hasAnalysedVideo -> "Choose 1–30 clips. Every AI Short is at least 60 seconds; transcript, audio activity, face and scene signals rank highlights."
                             else -> "Run Find moments or Track faces first to analyse this video."
                         },
                         color = if (durationMs < MIN_SHORT_DURATION_MS) Color(0xFFFFB86B) else Muted,
                         fontSize = 10.sp
                     )
-                    val availableMoments = remember(facePicks, scenePicks, speechCaptions, durationMs, requestedClipCount.toInt(), hasAnalysedVideo) { if (hasAnalysedVideo) buildClipMoments(facePicks, scenePicks, speechCaptions, durationMs, requestedClipCount.toInt()) else emptyList() }
+                    val availableMoments = remember(facePicks, scenePicks, speechCaptions, audioEnergy, durationMs, requestedClipCount.toInt(), hasAnalysedVideo) { if (hasAnalysedVideo) buildClipMoments(facePicks, scenePicks, speechCaptions, audioEnergy, durationMs, requestedClipCount.toInt()) else emptyList() }
                     if (availableMoments.isNotEmpty()) {
                         Button(
                             onClick = {
                                 val uri = selectedVideo ?: return@Button
                                 exporting = true
-                                val chosenMoments = buildClipMoments(facePicks, scenePicks, speechCaptions, durationMs, requestedClipCount.toInt())
+                                val chosenMoments = buildClipMoments(facePicks, scenePicks, speechCaptions, audioEnergy, durationMs, requestedClipCount.toInt())
                                 status = "Creating ${chosenMoments.size} clips…"
                                 scope.launch {
                                     exportSuggestedClips(
@@ -430,9 +437,14 @@ private fun ClipperHome(context: Context) {
                                         speechModelReady = true
                                         status = "English model installed. Tap Generate captions again."
                                     } else {
-                                        val cues = withContext(Dispatchers.IO) { SpeechCaptionEngine.transcribe(context, uri) {} }
-                                        speechCaptions = cues
-                                        status = if (cues.isEmpty()) "No clear speech detected." else "Generated " + cues.size + " timed caption lines."
+                                        val analysis = withContext(Dispatchers.IO) { SpeechCaptionEngine.transcribe(context, uri) {} }
+                                        speechCaptions = analysis.captions
+                                        audioEnergy = analysis.audioEnergy
+                                        status = when {
+                                            analysis.captions.isNotEmpty() -> "Generated ${analysis.captions.size} timed caption lines and analysed audio activity."
+                                            analysis.audioEnergy.isNotEmpty() -> "No clear speech detected; audio activity analysis is ready."
+                                            else -> "No clear speech or usable audio activity detected."
+                                        }
                                     }
                                 } catch (error: Exception) {
                                     status = "Caption generation failed: " + (error.localizedMessage ?: "unknown error")
@@ -451,7 +463,8 @@ private fun ClipperHome(context: Context) {
                         Text(if (speechBusy) "Working…" else if (speechModelReady) "Generate timed captions" else "Download English model")
                     }
                     Text(
-                        if (speechCaptions.isNotEmpty()) "Timed captions ready: " + speechCaptions.size + " lines"
+                        if (speechCaptions.isNotEmpty()) "Timed captions ready: " + speechCaptions.size + " lines • audio activity analysed"
+                        else if (audioEnergy.isNotEmpty()) "Audio activity analysed; no clear speech was recognised."
                         else if (speechModelReady) "Speech recognition runs offline on this phone."
                         else "First download needs internet and extra storage; transcription then runs offline.",
                         color = if (speechCaptions.isNotEmpty()) Green else Muted,
@@ -520,6 +533,7 @@ private fun buildClipMoments(
     faceMoments: List<Long>,
     sceneMoments: List<Long>,
     speechCaptions: List<CaptionCue>,
+    audioEnergy: List<AudioEnergyPoint>,
     durationMs: Long,
     requestedCount: Int
 ): List<Long> {
@@ -535,7 +549,7 @@ private fun buildClipMoments(
     val candidates = linkedSetOf<Long>()
     faceMoments.forEach { candidates.add(it.coerceIn(0L, latestMoment)) }
     sceneMoments.forEach { candidates.add(it.coerceIn(0L, latestMoment)) }
-    if (speechCaptions.isNotEmpty()) {
+    if (speechCaptions.isNotEmpty() || audioEnergy.isNotEmpty()) {
         var t = 10000L
         while (t <= latestMoment) {
             candidates.add(t)
@@ -568,7 +582,14 @@ private fun buildClipMoments(
         val faceScore = if (faceMoments.any { kotlin.math.abs(it - moment) <= 12000L }) 12.0 else 0.0
         val sceneScore = if (sceneMoments.any { kotlin.math.abs(it - moment) <= 10000L }) 7.0 else 0.0
         val speechPenalty = if (speechCaptions.isNotEmpty() && words < 8) 18.0 else 0.0
-        return densityScore + hookScore + continuityScore + faceScore + sceneScore - speechPenalty
+        val energyValues = audioEnergy.asSequence()
+            .filter { it.timeMs >= start && it.timeMs < end }
+            .map { it.rms.toDouble() }
+            .toList()
+        val averageEnergy = if (energyValues.isEmpty()) 0.0 else energyValues.average()
+        val peakEnergy = energyValues.maxOrNull() ?: 0.0
+        val audioEnergyScore = (averageEnergy * 70.0 + peakEnergy * 30.0).coerceIn(0.0, 12.0)
+        return densityScore + hookScore + continuityScore + faceScore + sceneScore + audioEnergyScore - speechPenalty
     }
 
     val ranked = candidates.map { it to score(it) }.sortedByDescending { it.second }
