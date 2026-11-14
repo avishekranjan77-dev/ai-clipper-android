@@ -11,6 +11,7 @@ import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.CancellationException
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -177,6 +178,9 @@ object SemanticHighlightEngine {
                                     ).collect { message -> append(message.toString()) }
                                 }
                             }
+                        } catch (cancelled: CancellationException) {
+                            runCatching { conversation.cancelProcess() }
+                            throw cancelled
                         } finally {
                             conversation.close()
                         }
@@ -227,6 +231,9 @@ object SemanticHighlightEngine {
                     ).collect { message -> append(message.toString()) }
                 }
             }
+        } catch (cancelled: CancellationException) {
+            runCatching { conversation.cancelProcess() }
+            throw cancelled
         } finally {
             conversation.close()
         }
