@@ -150,24 +150,29 @@ private fun ClipperHome(context: Context) {
     val player = remember { ExoPlayer.Builder(context).build() }
     DisposableEffect(player) { onDispose { player.release() } }
 
-    LaunchedEffect(selectedVideo) {
-        val uri = selectedVideo ?: return@LaunchedEffect
-        player.setMediaItem(MediaItem.fromUri(uri))
-        player.prepare()
-        player.playWhenReady = false
-        val listener = object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_READY && player.duration > 0) {
-                    durationMs = player.duration
-                    startMs = 0L
-                    endMs = player.duration
+    DisposableEffect(selectedVideo, player) {
+        val uri = selectedVideo
+        if (uri == null) {
+            onDispose { }
+        } else {
+            player.setMediaItem(MediaItem.fromUri(uri))
+            player.prepare()
+            player.playWhenReady = false
+            val listener = object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState == Player.STATE_READY && player.duration > 0) {
+                        durationMs = player.duration
+                        startMs = 0L
+                        endMs = player.duration
+                    }
                 }
             }
-        }
-        player.addListener(listener)
-        if (player.isReadyForDuration()) {
-            durationMs = player.duration
-            endMs = player.duration
+            player.addListener(listener)
+            if (player.isReadyForDuration()) {
+                durationMs = player.duration
+                endMs = player.duration
+            }
+            onDispose { player.removeListener(listener) }
         }
     }
 
