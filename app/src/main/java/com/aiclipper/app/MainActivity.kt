@@ -137,6 +137,8 @@ private fun ClipperHome(context: Context) {
     var faceTrack by remember { mutableStateOf<List<FaceTrackPoint>>(emptyList()) }
     var faceLayouts by remember { mutableStateOf<List<FaceLayoutSample>>(emptyList()) }
     var twoPersonSplitScreen by remember { mutableStateOf(true) }
+    var captionStyle by remember { mutableStateOf(CaptionStyle.BOLD_POP) }
+    var generatedClips by remember { mutableStateOf<List<GeneratedClip>>(emptyList()) }
     var scanningFaces by remember { mutableStateOf(false) }
     var hasAnalysedVideo by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -169,6 +171,8 @@ private fun ClipperHome(context: Context) {
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         selectedVideo = uri
+        generatedClips.forEach { it.file.delete() }
+        generatedClips = emptyList()
         hasAnalysedVideo = false
         speechCaptions = emptyList()
         speakerTurns = emptyList()
@@ -225,6 +229,8 @@ private fun ClipperHome(context: Context) {
                             scope.launch {
                                 try {
                                     val localFile = withContext(Dispatchers.IO) { downloadLinkedVideo(context, parsed) }
+                                    generatedClips.forEach { it.file.delete() }
+                                    generatedClips = emptyList()
                                     selectedVideo = Uri.fromFile(localFile)
                                     selectedVideoName = localFile.name
                                     speechCaptions = emptyList()
@@ -381,12 +387,14 @@ private fun ClipperHome(context: Context) {
                                 val uri = selectedVideo ?: return@Button
                                 exporting = true
                                 val chosenMoments = buildClipMoments(facePicks, scenePicks, speechCaptions, audioEnergy, durationMs, requestedClipCount.toInt())
-                                status = "Creating ${chosenMoments.size} clips…"
+                                generatedClips.forEach { it.file.delete() }
+                                generatedClips = emptyList()
+                                status = "Creating ${chosenMoments.size} clip previews…"
                                 scope.launch {
                                     exportSuggestedClips(
-                                        context, uri, chosenMoments, durationMs, faceTrack, faceLayouts, twoPersonSplitScreen, speakerTurns, captionText, speechCaptions,
+                                        context, uri, chosenMoments, durationMs, faceTrack, faceLayouts, twoPersonSplitScreen, speakerTurns, captionText, speechCaptions, captionStyle,
                                         onProgress = { exportProgress = it },
-                                        onComplete = { message -> exporting = false; status = message },
+                                        onComplete = { clips -> generatedClips = clips; exporting = false; status = "${clips.size} previews are ready. Review them and download only the clips you want." },
                                         onError = { message -> exporting = false; status = message }
                                     )
                                 }
@@ -397,7 +405,7 @@ private fun ClipperHome(context: Context) {
                         ) {
                             Icon(Icons.Default.Download, contentDescription = null)
                             Spacer(Modifier.size(6.dp))
-                            Text("Create ${availableMoments.size} clips")
+                            Text("Create ${availableMoments.size} clip previews")
                         }
                     }
                     availableMoments.take(6).forEachIndexed { index, time ->
@@ -412,6 +420,11 @@ private fun ClipperHome(context: Context) {
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF242236))
                         ) { Text("Face moment ${index + 1}  •  ${formatTime(time)}", color = Color.White) }
                     }
+                }
+                if (generatedClips.isNotEmpty()) {
+                    GeneratedClipReviewPanel(context, generatedClips,
+                        onSaved = { count -> status = "$count clip(s) saved to Gallery." },
+                        onError = { message -> status = message })
                 }
                 Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(16.dp)) {
                     Text("OUTPUT FORMAT", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
@@ -436,6 +449,19 @@ private fun ClipperHome(context: Context) {
                     )
                 }
                 Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(16.dp)) {
+                    Text("CAPTION STYLE", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        CaptionStyle.values().forEach { style ->
+                            Button(onClick = { captionStyle = style }, modifier = Modifier.weight(1f),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 3.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = if (captionStyle == style) Accent else Color(0xFF292B34))) {
+                                Text(style.label, fontSize = 9.sp, maxLines = 1)
+                            }
+                        }
+                    }
+                    Text("Captions shift to the upper or lower safe area when a detected face is nearby.", color = Muted, fontSize = 10.sp)
+                    Spacer(Modifier.height(10.dp))
                     Text("CAPTION OVERLAY", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     Spacer(Modifier.height(8.dp))
                     BasicTextField(
@@ -514,7 +540,7 @@ private fun ClipperHome(context: Context) {
                         exportProgress = 0f
                         status = "Preparing your clip…"
                         scope.launch {
-                            exportVideo(context, uri, startMs, endMs, portrait, captionText, faceTrack, speechCaptions,
+                            exportVideo(context, uri, startMs, endMs, portrait, captionText, faceTrack, faceLayouts, speechCaptions, captionStyle,
                                 onProgress = { exportProgress = it },
                                 onComplete = { message -> exporting = false; status = message },
                                 onError = { message -> exporting = false; status = message })
@@ -764,7 +790,9 @@ private suspend fun exportVideo(
     portrait: Boolean,
     caption: String,
     faceTrack: List<FaceTrackPoint>,
+    faceLayouts: List<FaceLayoutSample>,
     speechCaptions: List<CaptionCue>,
+    captionStyle: CaptionStyle,
     onProgress: (Float) -> Unit,
     onComplete: (String) -> Unit,
     onError: (String) -> Unit
@@ -786,7 +814,7 @@ private suspend fun exportVideo(
                 CaptionCue((it.startMs - startMs).coerceAtLeast(0L), (it.endMs - startMs).coerceAtMost(endMs - startMs), it.text)
             }
             if (clipCues.isNotEmpty()) {
-                videoEffects.add(OverlayEffect(listOf(TimedCaptionOverlay(clipCues))))
+                videoEffects.add(OverlayEffect(listOf(TimedCaptionOverlay(clipCues, captionStyle, faceLayouts, startMs))))
             } else if (caption.isNotBlank()) {
                 val styledCaption = SpannableString(caption.trim()).apply {
                     setSpan(ForegroundColorSpan(android.graphics.Color.WHITE), 0, length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
@@ -830,8 +858,9 @@ private suspend fun exportSuggestedClips(
     speakerTurns: List<SpeakerTurn>,
     caption: String,
     speechCaptions: List<CaptionCue>,
+    captionStyle: CaptionStyle,
     onProgress: (Float) -> Unit,
-    onComplete: (String) -> Unit,
+    onComplete: (List<GeneratedClip>) -> Unit,
     onError: (String) -> Unit
 ) = withContext(Dispatchers.Main) {
     val clips = ClipIntelligence.buildExportRanges(moments, durationMs)
@@ -841,10 +870,11 @@ private suspend fun exportSuggestedClips(
         return@withContext
     }
     var index = 0
+    val generated = mutableListOf<GeneratedClip>()
     fun exportNext() {
         if (index >= clips.size) {
             onProgress(1f)
-            onComplete("${clips.size} AI clips saved to your Gallery.")
+            onComplete(generated.toList())
             return
         }
         val (startMs, endMs) = clips[index]
@@ -865,7 +895,7 @@ private suspend fun exportSuggestedClips(
             CaptionCue((it.startMs - startMs).coerceAtLeast(0L), (it.endMs - startMs).coerceAtMost(endMs - startMs), it.text)
         }
         if (clipCues.isNotEmpty()) {
-            videoEffects.add(OverlayEffect(listOf(TimedCaptionOverlay(clipCues))))
+            videoEffects.add(OverlayEffect(listOf(TimedCaptionOverlay(clipCues, captionStyle, faceLayouts, startMs))))
         } else if (caption.isNotBlank()) {
             val styled = SpannableString(caption.trim()).apply {
                 setSpan(ForegroundColorSpan(android.graphics.Color.WHITE), 0, length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
@@ -876,18 +906,19 @@ private suspend fun exportSuggestedClips(
         val transformer = Transformer.Builder(context).addListener(object : Transformer.Listener {
             override fun onCompleted(composition: androidx.media3.transformer.Composition, exportResult: ExportResult) {
                 try {
-                    if (!copyToGallery(context, output)) throw IllegalStateException("Gallery rejected the exported clip")
-                    output.delete()
+                    generated.add(GeneratedClip(output, startMs, endMs))
                     index++
                     onProgress(index.toFloat() / clips.size)
                     exportNext()
                 } catch (error: Exception) {
                     output.delete()
-                    onError("Clip ${index + 1} could not be saved: ${error.localizedMessage ?: "unknown error"}")
+                    generated.forEach { it.file.delete() }
+                    onError("Clip ${index + 1} could not be prepared: ${error.localizedMessage ?: "unknown error"}")
                 }
             }
             override fun onError(composition: androidx.media3.transformer.Composition, exportResult: ExportResult, exportException: ExportException) {
                 output.delete()
+                generated.forEach { it.file.delete() }
                 onError("Clip ${index + 1} export failed: ${exportException.localizedMessage ?: "unknown error"}")
             }
         }).build()
