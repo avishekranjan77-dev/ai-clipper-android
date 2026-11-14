@@ -131,6 +131,7 @@ private fun ClipperHome(context: Context) {
     var audioEnergy by remember { mutableStateOf<List<AudioEnergyPoint>>(emptyList()) }
     var speechModelReady by remember { mutableStateOf(SpeechCaptionEngine.isModelInstalled(context)) }
     var processing by remember { mutableStateOf(false) }
+    var importingLink by remember { mutableStateOf(false) }
     var processingProgress by remember { mutableFloatStateOf(0f) }
     var status by remember { mutableStateOf("Choose a video to start editing") }
     var scenePicks by remember { mutableStateOf<List<Long>>(emptyList()) }
@@ -221,7 +222,7 @@ private fun ClipperHome(context: Context) {
                 Spacer(Modifier.height(8.dp))
                 BasicTextField(
                     value = videoLink,
-                    onValueChange = { if (!processing) videoLink = it.take(2048) },
+                    onValueChange = { if (!processing && !importingLink) videoLink = it.take(2048) },
                     modifier = Modifier.fillMaxWidth().background(Color(0xFF22242C), RoundedCornerShape(10.dp)).padding(12.dp),
                     textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 13.sp),
                     singleLine = true,
@@ -244,6 +245,7 @@ private fun ClipperHome(context: Context) {
                             status = "This link does not look like a direct video file. Use a direct MP4, M4V, MOV or WebM URL."
                         } else {
                             status = "Downloading linked video to local storage…"
+                            importingLink = true
                             scope.launch {
                                 try {
                                     val localFile = withContext(Dispatchers.IO) { downloadLinkedVideo(context, parsed) }
@@ -266,11 +268,13 @@ private fun ClipperHome(context: Context) {
                                     status = "Linked video imported. You can now analyse and create clips."
                                 } catch (error: Exception) {
                                     status = "Link import failed: ${error.localizedMessage ?: "check the URL and access permissions"}"
+                                } finally {
+                                    importingLink = false
                                 }
                             }
                         }
                     },
-                    enabled = !processing && !semanticBusy,
+                    enabled = !processing && !semanticBusy && !importingLink,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF292B34))
                 ) { Text("Use video link") }
