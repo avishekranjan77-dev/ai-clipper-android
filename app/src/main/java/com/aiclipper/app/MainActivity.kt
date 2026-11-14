@@ -3,6 +3,7 @@ package com.aiclipper.app
 import android.content.ContentValues
 import android.content.Context
 import android.media.MediaMetadataRetriever
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -104,6 +105,8 @@ private fun ClipperHome(context: Context) {
     var exporting by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Choose a video to start editing") }
     var exportProgress by remember { mutableFloatStateOf(0f) }
+    var analysing by remember { mutableStateOf(false) }
+    var scenePicks by remember { mutableStateOf<List<Long>>(emptyList()) }
     val scope = rememberCoroutineScope()
 
     val player = remember { ExoPlayer.Builder(context).build() }
@@ -242,6 +245,58 @@ private fun ClipperHome(context: Context) {
 }
 
 private fun Player.isReadyForDuration(): Boolean = playbackState == Player.STATE_READY && duration > 0
+
+private fun findScenePicks(context: Context, uri: Uri, durationMs: Long): List<Long> {
+    if (durationMs < 4000L) return emptyList()
+    val retriever = MediaMetadataRetriever()
+    val scores = mutableListOf<Pair<Long, Double>>()
+    try {
+        retriever.setDataSource(context, uri)
+        var previous: Bitmap? = null
+        var time = 1000L
+        while (time < durationMs - 1000L) {
+            val frame = retriever.getFrameAtTime(time * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            if (frame != null) {
+                val small = Bitmap.createScaledBitmap(frame, 24, 24, true)
+                if (small !== frame) frame.recycle()
+                val pixels = IntArray(24 * 24)
+                small.getPixels(pixels, 0, 24, 0, 0, 24, 24)
+                var score = 0.0
+                previous?.let { old ->
+                    val oldSmall = if (old.width == 24 && old.height == 24) old else Bitmap.createScaledBitmap(old, 24, 24, true)
+                    val oldPixels = IntArray(24 * 24)
+                    oldSmall.getPixels(oldPixels, 0, 24, 0, 0, 24, 24)
+                    for (i in pixels.indices) {
+                        val a = pixels[i]
+                        val b = oldPixels[i]
+                        val la = ((a shr 16 and 255) * 0.299 + (a shr 8 and 255) * 0.587 + (a and 255) * 0.114)
+                        val lb = ((b shr 16 and 255) * 0.299 + (b shr 8 and 255) * 0.587 + (b and 255) * 0.114)
+                        score += kotlin.math.abs(la - lb)
+                    }
+                    score /= pixels.size
+                    scores.add(time to score)
+                    if (oldSmall !== old) oldSmall.recycle()
+                }
+                previous?.recycle()
+                previous = small
+            }
+            time += 2000L
+        }
+        previous?.recycle()
+    } catch (_: Exception) {
+        return emptyList()
+    } finally {
+        retriever.release()
+    }
+    val sorted = scores.sortedByDescending { it.second }
+    val chosen = mutableListOf<Long>()
+    for ((time, score) in sorted) {
+        if (score < 16.0) break
+        if (chosen.none { kotlin.math.abs(it - time) < 8000L }) chosen.add(time)
+        if (chosen.size == 4) break
+    }
+    return chosen.sorted()
+}
 
 private suspend fun exportVideo(
     context: Context,
