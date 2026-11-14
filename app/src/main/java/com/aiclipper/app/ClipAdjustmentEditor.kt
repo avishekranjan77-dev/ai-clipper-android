@@ -3,7 +3,7 @@ package com.aiclipper.app
 import android.content.Context
 import android.graphics.Matrix
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -69,7 +69,7 @@ fun ClipAdjustmentEditor(clip: GeneratedClip, onCancel: () -> Unit, onRendered: 
     val minimumTrimFraction = (60_000f / duration.toFloat()).coerceAtMost(1f)
     Column(Modifier.fillMaxWidth().background(Color(0xFF20222A), RoundedCornerShape(14.dp)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Text("ADJUST CLIP", color = Color.White, fontSize = 13.sp)
-        Text("Set the output frame, then drag the preview or use the controls. The new framing is applied when you re-render.", color = Color(0xFF9295A1), fontSize = 10.sp)
+        Text("Drag to reposition and pinch to resize the crop. Use the sliders for precise framing; changes apply when you re-render.", color = Color(0xFF9295A1), fontSize = 10.sp)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             listOf("9:16", "1:1", "16:9", "Original").forEach { aspect ->
                 Button(onClick = { selectedAspect = aspect }, modifier = Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 2.dp, vertical = 7.dp), colors = ButtonDefaults.buttonColors(containerColor = if (selectedAspect == aspect) Color(0xFF8B7CFF) else Color(0xFF343640))) { Text(aspect, fontSize = 10.sp) }
@@ -79,10 +79,10 @@ fun ClipAdjustmentEditor(clip: GeneratedClip, onCancel: () -> Unit, onRendered: 
             Modifier.fillMaxWidth().height(230.dp).background(Color.Black, RoundedCornerShape(10.dp))
                 .border(1.dp, Color(0xFF8B7CFF), RoundedCornerShape(10.dp))
                 .pointerInput(zoom) {
-                    detectDragGestures { change, drag ->
-                        change.consume()
-                        horizontal = (horizontal + drag.x / size.width * 2f / zoom).coerceIn(-1f, 1f)
-                        vertical = (vertical + drag.y / size.height * 2f / zoom).coerceIn(-1f, 1f)
+                    detectTransformGestures { _, pan, zoomChange, _ ->
+                        zoom = (zoom * zoomChange).coerceIn(1f, 2.5f)
+                        horizontal = (horizontal + pan.x / size.width * 2f / zoom).coerceIn(-1f, 1f)
+                        vertical = (vertical + pan.y / size.height * 2f / zoom).coerceIn(-1f, 1f)
                     }
                 }
         ) {
@@ -103,7 +103,7 @@ fun ClipAdjustmentEditor(clip: GeneratedClip, onCancel: () -> Unit, onRendered: 
                 "Original" -> 0.90f
                 else -> 0.90f
             }
-            Box(Modifier.fillMaxWidth(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+            Box(Modifier.fillMaxWidth().height(230.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
                 Box(
                     Modifier.fillMaxWidth(frameWidth).fillMaxHeight(frameHeight)
                         .offset(x = (horizontal * 24f).dp, y = (vertical * 24f).dp)
