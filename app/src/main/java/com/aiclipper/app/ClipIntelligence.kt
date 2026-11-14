@@ -86,6 +86,40 @@ object ClipIntelligence {
         return selected.sorted().take(target)
     }
 
+
+    /**
+     * Keeps semantic selections first, then fills remaining slots with non-overlapping
+     * signal-based ranges when the language model returns fewer moments than requested.
+     */
+    fun mergeExportRanges(
+        preferredRanges: List<ClipRange>,
+        fallbackMoments: List<Long>,
+        durationMs: Long,
+        requestedCount: Int
+    ): List<ClipRange> {
+        if (durationMs < MIN_SHORT_DURATION_MS || requestedCount <= 0) return emptyList()
+        val availableSlots = (durationMs / MIN_SHORT_DURATION_MS).toInt().coerceAtLeast(1)
+        val target = requestedCount.coerceIn(1, 30).coerceAtMost(availableSlots)
+        val chosen = mutableListOf<ClipRange>()
+        preferredRanges.forEach { range ->
+            if (chosen.size < target &&
+                range.startMs >= 0L &&
+                range.endMs <= durationMs &&
+                range.durationMs in MIN_SHORT_DURATION_MS..90_000L &&
+                chosen.none { range.startMs < it.endMs && range.endMs > it.startMs }
+            ) {
+                chosen.add(range)
+            }
+        }
+        for (fallback in buildExportRanges(fallbackMoments, durationMs)) {
+            if (chosen.size >= target) break
+            if (chosen.none { fallback.startMs < it.endMs && fallback.endMs > it.startMs }) {
+                chosen.add(fallback)
+            }
+        }
+        return chosen.sortedBy { it.startMs }
+    }
+
     /** Produce full-minute export ranges without overlap or out-of-bounds timestamps. */
     fun buildExportRanges(moments: List<Long>, durationMs: Long): List<ClipRange> {
         if (durationMs < MIN_SHORT_DURATION_MS) return emptyList()
