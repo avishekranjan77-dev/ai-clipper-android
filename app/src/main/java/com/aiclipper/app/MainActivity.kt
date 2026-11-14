@@ -454,14 +454,20 @@ private fun ClipperHome(context: Context) {
                                         var ranges: List<ClipRange> = emptyList()
                                         if (semanticModelReady && speechCaptions.isNotEmpty()) {
                                             status = "Understanding the conversation with on-device AI…"
-                                            semanticHighlights = SemanticHighlightEngine.analyse(
-                                                context, speechCaptions, durationMs, requestedClipCount.toInt(),
-                                                facePicks, scenePicks, audioEnergy, speakerTurns
-                                            ) { value ->
-                                                scope.launch { processingProgress = 0.38f + value * 0.30f }
-                                            }
-                                            ranges = semanticHighlights.take(requestedClipCount.toInt()).map {
-                                                ClipRange(it.startMs, it.endMs)
+                                            try {
+                                                semanticHighlights = SemanticHighlightEngine.analyse(
+                                                    context, speechCaptions, durationMs, requestedClipCount.toInt(),
+                                                    facePicks, scenePicks, audioEnergy, speakerTurns
+                                                ) { value ->
+                                                    scope.launch { processingProgress = 0.38f + value * 0.30f }
+                                                }
+                                                ranges = semanticHighlights.take(requestedClipCount.toInt()).map {
+                                                    ClipRange(it.startMs, it.endMs)
+                                                }
+                                            } catch (_: Exception) {
+                                                semanticHighlights = emptyList()
+                                                status = "Semantic AI unavailable on this run; using offline signal-based selection…"
+                                                processingProgress = 0.60f
                                             }
                                         } else {
                                             status = "Ranking the strongest moments…"
