@@ -34,7 +34,7 @@ class TwoPersonSplitScreenEffect(
         override fun configure(inputWidth: Int, inputHeight: Int): Size {
             sourceWidth = inputWidth
             sourceHeight = inputHeight
-            sourceAspect = inputWidth.toFloat() / inputHeight.toFloat().coerceAtLeast(1f)
+            sourceAspect = timeline.firstOrNull()?.sourceAspectRatio ?: (inputWidth.toFloat() / inputHeight.toFloat().coerceAtLeast(1f))
             return Size(540, 960)
         }
 
@@ -108,7 +108,7 @@ class TwoPersonSplitScreenEffect(
             GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
             val error = GLES20.glGetError()
             if (error != GLES20.GL_NO_ERROR) {
-                throw VideoFrameProcessingException(IllegalStateException("Split-screen frame upload failed: GL error $error"))
+                throw IllegalStateException("Split-screen frame upload failed: GL error $error")
             }
         }
 
