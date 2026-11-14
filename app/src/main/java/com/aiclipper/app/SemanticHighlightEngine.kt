@@ -187,8 +187,7 @@ object SemanticHighlightEngine {
                             withTimeout(INFERENCE_TIMEOUT_MS) {
                                 buildString {
                                     conversation.sendMessageAsync(
-                                        buildPrompt(window, faceMoments, sceneMoments, audioEnergy, speakerTurns, userPreference, clipMaximum) +
-                                            "\n\n/no_think"
+                                        buildPrompt(window, faceMoments, sceneMoments, audioEnergy, speakerTurns, userPreference, clipMaximum)
                                     ).collect { message -> append(message.toString()) }
                                 }
                             }
