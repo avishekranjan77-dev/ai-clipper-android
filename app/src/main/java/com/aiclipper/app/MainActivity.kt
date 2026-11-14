@@ -964,7 +964,7 @@ private fun scopeExportProgress(
                 if (state == Transformer.PROGRESS_STATE_AVAILABLE) {
                     onProgress(progressHolder.progress / 100f)
                     handler.postDelayed(this, 500L)
-                } else if (state != Transformer.PROGRESS_STATE_NOT_STARTED) {
+                } else {
                     handler.postDelayed(this, 500L)
                 }
             } catch (_: Exception) {
