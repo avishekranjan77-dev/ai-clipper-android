@@ -900,6 +900,7 @@ private suspend fun exportSuggestedClips(
         val item = MediaItem.Builder().setUri(source).setClippingConfiguration(clipping).build()
         val videoEffects = mutableListOf<androidx.media3.common.Effect>()
         val clipFaceLayouts = faceLayouts.filter { it.timeMs in startMs..endMs }
+        val clipFaceTrack = faceTrack.filter { it.timeMs in startMs..endMs }
         val clipSpeakerTurns = speakerTurns.filter { it.endMs > startMs && it.startMs < endMs }
         if (twoPersonSplitScreen && clipFaceLayouts.any { it.faces.size >= 2 }) {
             videoEffects.add(
@@ -910,8 +911,8 @@ private suspend fun exportSuggestedClips(
                     startMs
                 )
             )
-        } else if (faceTrack.isNotEmpty()) {
-            videoEffects.add(createFaceTrackingEffect(faceTrack, startMs, outputAspect))
+        } else if (clipFaceTrack.isNotEmpty()) {
+            videoEffects.add(createFaceTrackingEffect(clipFaceTrack, startMs, outputAspect))
         }
         when (outputAspect) {
             "9:16" -> videoEffects.add(Presentation.createForWidthAndHeight(1080, 1920, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
