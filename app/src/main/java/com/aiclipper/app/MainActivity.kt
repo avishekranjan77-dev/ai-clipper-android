@@ -15,6 +15,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,6 +61,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import androidx.media3.transformer.EditedMediaItem
@@ -67,10 +69,16 @@ import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
 import androidx.media3.effect.Presentation
+import androidx.media3.effect.OverlayEffect
+import androidx.media3.effect.StaticOverlaySettings
+import androidx.media3.effect.TextOverlay
 import androidx.media3.transformer.Effects
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.text.SpannableString
+import android.text.Spannable
+import android.text.style.ForegroundColorSpan
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -102,6 +110,7 @@ private fun ClipperHome(context: Context) {
     var startMs by remember { mutableLongStateOf(0L) }
     var endMs by remember { mutableLongStateOf(0L) }
     var portrait by remember { mutableStateOf(true) }
+    var captionText by remember { mutableStateOf("") }
     var exporting by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Choose a video to start editing") }
     var exportProgress by remember { mutableFloatStateOf(0f) }
@@ -229,6 +238,21 @@ private fun ClipperHome(context: Context) {
                     }
                     Text(if (portrait) "Portrait crop for Shorts, Reels and TikTok" else "Keep the source video's original framing", color = Muted, fontSize = 11.sp)
                 }
+                Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(16.dp)) {
+                    Text("CAPTION OVERLAY", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Spacer(Modifier.height(8.dp))
+                    BasicTextField(
+                        value = captionText,
+                        onValueChange = { captionText = it.take(120) },
+                        modifier = Modifier.fillMaxWidth().background(Color(0xFF22242C), RoundedCornerShape(10.dp)).padding(12.dp),
+                        textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 14.sp),
+                        decorationBox = { inner ->
+                            if (captionText.isEmpty()) Text("Type a caption to burn into the exported clip…", color = Muted, fontSize = 13.sp)
+                            inner()
+                        }
+                    )
+                    Text("Adds one styled caption across the whole clip. Automatic speech transcription is not included yet.", color = Muted, fontSize = 10.sp)
+                }
                 Button(
                     onClick = {
                         val uri = selectedVideo ?: return@Button
@@ -237,7 +261,7 @@ private fun ClipperHome(context: Context) {
                         exportProgress = 0f
                         status = "Preparing your clip…"
                         scope.launch {
-                            exportVideo(context, uri, startMs, endMs, portrait,
+                            exportVideo(context, uri, startMs, endMs, portrait, captionText,
                                 onProgress = { exportProgress = it },
                                 onComplete = { message -> exporting = false; status = message },
                                 onError = { message -> exporting = false; status = message })
@@ -341,12 +365,14 @@ private fun findScenePicks(context: Context, uri: Uri, durationMs: Long): List<L
     return chosen.sorted()
 }
 
+@OptIn(UnstableApi::class)
 private suspend fun exportVideo(
     context: Context,
     source: Uri,
     startMs: Long,
     endMs: Long,
     portrait: Boolean,
+    caption: String,
     onProgress: (Float) -> Unit,
     onComplete: (String) -> Unit,
     onError: (String) -> Unit
@@ -359,9 +385,19 @@ private suspend fun exportVideo(
                 .setEndPositionMs(endMs)
                 .build()
             val mediaItem = MediaItem.Builder().setUri(source).setClippingConfiguration(clipping).build()
-            val effects = if (portrait) {
-                Effects(emptyList(), listOf(Presentation.createForHeight(1920)))
-            } else Effects(emptyList(), emptyList())
+            val videoEffects = mutableListOf<androidx.media3.common.Effect>()
+            if (portrait) videoEffects.add(Presentation.createForHeight(1920))
+            if (caption.isNotBlank()) {
+                val styledCaption = SpannableString(caption.trim()).apply {
+                    setSpan(ForegroundColorSpan(android.graphics.Color.WHITE), 0, length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
+                val settings = StaticOverlaySettings.Builder()
+                    .setOverlayFrameAnchor(0f, -0.82f)
+                    .setBackgroundFrameAnchor(0f, -0.82f)
+                    .build()
+                videoEffects.add(OverlayEffect(listOf(TextOverlay.createStaticTextOverlay(styledCaption, settings))))
+            }
+            val effects = Effects(emptyList(), videoEffects)
             val edited = EditedMediaItem.Builder(mediaItem).setEffects(effects).build()
             val transformer = Transformer.Builder(context).addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: androidx.media3.transformer.Composition, exportResult: ExportResult) {
