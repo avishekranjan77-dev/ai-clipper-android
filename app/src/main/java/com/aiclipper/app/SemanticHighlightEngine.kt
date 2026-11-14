@@ -1,6 +1,7 @@
 package com.aiclipper.app
 
 import android.content.Context
+import android.app.ActivityManager
 import android.os.StatFs
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Contents
@@ -43,6 +44,7 @@ object SemanticHighlightEngine {
     private const val WINDOW_MS = 180_000L
     private const val STEP_MS = 120_000L
     private const val INFERENCE_TIMEOUT_MS = 90_000L
+    private const val MIN_AVAILABLE_MEMORY_BYTES = 1_700L * 1024L * 1024L
 
     fun isModelInstalled(context: Context): Boolean {
         val file = File(context.filesDir, MODEL_FILE)
@@ -140,6 +142,15 @@ object SemanticHighlightEngine {
                 require(isModelInstalled(context)) { "The on-device AI model is missing or incomplete. Download it again from One-Time AI Setup." }
                 require(captions.isNotEmpty()) { "Generate speech captions before semantic highlight analysis." }
                 require(durationMs >= MIN_CLIP_MS) { "The source video must be at least 60 seconds long." }
+                val memoryManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                val memoryInfo = ActivityManager.MemoryInfo()
+                memoryManager?.getMemoryInfo(memoryInfo)
+                if (memoryManager != null && (memoryInfo.lowMemory || memoryInfo.availMem < MIN_AVAILABLE_MEMORY_BYTES)) {
+                    val availableMb = memoryInfo.availMem / (1024L * 1024L)
+                    throw IllegalStateException(
+                        "On-device conversation AI needs about 1.7 GB of free memory; this phone currently reports ${availableMb} MB available. Continuing with the offline clip-selection fallback is safer."
+                    )
+                }
                 val clipMaximum = maxClipDurationMs.coerceIn(MIN_CLIP_MS, MAX_CLIP_MS)
                 val windows = buildWindows(captions, durationMs)
                 if (windows.isEmpty()) return@withContext emptyList()
@@ -169,7 +180,7 @@ object SemanticHighlightEngine {
                                         "Do not invent dialogue or timestamps. Return only valid JSON."
                                 ),
                                 thinkingConfig = ThinkingConfig(enableThinking = false, thinkingTokenBudget = 0),
-                                maxOutputToken = 512
+                                maxOutputToken = 384
                             )
                         )
                         val response = try {
@@ -284,7 +295,7 @@ object SemanticHighlightEngine {
     ): String {
         val transcript = window.cues.joinToString("\n") {
             "[${it.startMs}-${it.endMs}] ${it.text.replace("\n", " ").take(180)}"
-        }.take(9_000)
+        }.take(4_500)
         val sceneCount = scenes.count { it in window.startMs..window.endMs }
         val faceCount = faces.count { it in window.startMs..window.endMs }
         val speakerCount = speakers.filter { it.endMs > window.startMs && it.startMs < window.endMs }
