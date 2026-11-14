@@ -186,12 +186,23 @@ object SemanticHighlightEngine {
                                 maxOutputToken = 384
                             )
                         )
+                        val windowProgressStart = 0.08f + (index.toFloat() / windows.size.toFloat()) * 0.76f
+                        val windowProgressSpan = 0.76f / windows.size.toFloat()
                         val response = try {
                             withTimeout(INFERENCE_TIMEOUT_MS) {
                                 buildString {
+                                    var lastProgressUpdate = 0L
                                     conversation.sendMessageAsync(
                                         buildPrompt(window, faceMoments, sceneMoments, audioEnergy, speakerTurns, userPreference, clipMaximum)
-                                    ).collect { message -> append(message.toString()) }
+                                    ).collect { message ->
+                                        append(message.toString())
+                                        val now = System.currentTimeMillis()
+                                        if (now - lastProgressUpdate >= 200L) {
+                                            val responseFraction = (length.toFloat() / 1_500f).coerceIn(0f, 0.9f)
+                                            onProgress(windowProgressStart + responseFraction * windowProgressSpan)
+                                            lastProgressUpdate = now
+                                        }
+                                    }
                                 }
                             }
                         } catch (cancelled: CancellationException) {
@@ -201,11 +212,11 @@ object SemanticHighlightEngine {
                             conversation.close()
                         }
                         candidates.addAll(parseHighlights(response, window.startMs, window.endMs, captions, clipMaximum))
-                        onProgress(0.08f + ((index + 1f) / (windows.size + 1f)) * 0.76f)
+                        onProgress(windowProgressStart + windowProgressSpan)
                     }
                     onStage("Comparing and ranking the strongest moments…")
                     onProgress(0.88f)
-                    val refinedCandidates = globallyRefine(engine, candidates)
+                    val refinedCandidates = globallyRefine(engine, candidates) { value -> onProgress(0.88f + value * 0.10f) }
                     onProgress(1f)
                     rankAndMerge(refinedCandidates, requestedCount, durationMs, faceMoments, sceneMoments, audioEnergy, speakerTurns)
                 } finally {
@@ -222,7 +233,7 @@ object SemanticHighlightEngine {
      * Second pass compares candidate summaries from every transcript window together.
      * This helps the model choose varied, high-value moments across the full source video.
      */
-    private suspend fun globallyRefine(engine: Engine, candidates: List<SemanticHighlight>): List<SemanticHighlight> {
+    private suspend fun globallyRefine(engine: Engine, candidates: List<SemanticHighlight>, onProgress: (Float) -> Unit): List<SemanticHighlight> {
         val pool = candidates.distinctBy { it.startMs }.sortedByDescending { it.score }.take(30)
         if (pool.size <= 1) return pool
         val options = pool.mapIndexed { index, item ->
@@ -241,12 +252,20 @@ object SemanticHighlightEngine {
         val response = try {
             withTimeout(INFERENCE_TIMEOUT_MS) {
                 buildString {
+                    var lastProgressUpdate = 0L
                     conversation.sendMessageAsync(
                         "Compare these candidate moments from the complete source video. Select the strongest and most varied moments. " +
                             "Do not select overlapping ranges or repeated versions of the same point. " +
                             "Return up to ${pool.size} items in ranked order with original integer id and revised score 0-100. " +
                             "Do not invent ids. JSON only: {\"ranked\":[{\"id\":0,\"score\":95}]}\n\nCANDIDATES:\n$options"
-                    ).collect { message -> append(message.toString()) }
+                    ).collect { message ->
+                        append(message.toString())
+                        val now = System.currentTimeMillis()
+                        if (now - lastProgressUpdate >= 200L) {
+                            onProgress((length.toFloat() / 1_500f).coerceIn(0f, 1f))
+                            lastProgressUpdate = now
+                        }
+                    }
                 }
             }
         } catch (cancelled: CancellationException) {
