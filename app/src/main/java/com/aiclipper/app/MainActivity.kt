@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.graphics.Bitmap
+import android.graphics.Matrix
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -69,8 +70,8 @@ import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
 import androidx.media3.effect.Presentation
+import androidx.media3.effect.MatrixTransformation
 import androidx.media3.effect.OverlayEffect
-import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.effect.TextOverlay
 import androidx.media3.transformer.Effects
 import kotlinx.coroutines.Dispatchers
@@ -83,6 +84,10 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.Locale
+import com.google.android.gms.tasks.Tasks
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.face.FaceDetection
+import com.google.mlkit.vision.face.FaceDetectorOptions
 
 private val AppBackground = Color(0xFF090A0D)
 private val Panel = Color(0xFF15171D)
@@ -116,6 +121,9 @@ private fun ClipperHome(context: Context) {
     var exportProgress by remember { mutableFloatStateOf(0f) }
     var analysing by remember { mutableStateOf(false) }
     var scenePicks by remember { mutableStateOf<List<Long>>(emptyList()) }
+    var facePicks by remember { mutableStateOf<List<Long>>(emptyList()) }
+    var faceTrack by remember { mutableStateOf<List<FaceTrackPoint>>(emptyList()) }
+    var scanningFaces by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     val player = remember { ExoPlayer.Builder(context).build() }
@@ -230,6 +238,56 @@ private fun ClipperHome(context: Context) {
                     }
                 }
                 Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f)) {
+                            Text("AI FACE TRACKING", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text("Detect people and follow the main speaker locally", color = Muted, fontSize = 11.sp)
+                        }
+                        Button(
+                            onClick = {
+                                val uri = selectedVideo ?: return@Button
+                                scanningFaces = true
+                                status = "AI is scanning faces on this device…"
+                                scope.launch {
+                                    try {
+                                        val result = withContext(Dispatchers.Default) { analyseFaces(context, uri, durationMs) }
+                                        faceTrack = result.track
+                                        facePicks = result.picks
+                                        status = if (result.track.isEmpty()) "No faces detected. You can still use the manual crop." else "Tracked faces in ${result.track.size} sampled moments; found ${result.picks.size} suggested clips."
+                                    } catch (error: Exception) {
+                                        status = "Face analysis failed: ${error.localizedMessage ?: "try another video"}"
+                                    } finally {
+                                        scanningFaces = false
+                                    }
+                                }
+                            },
+                            enabled = !scanningFaces,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF292B34))
+                        ) {
+                            if (scanningFaces) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Default.AutoAwesome, contentDescription = null)
+                            Spacer(Modifier.size(5.dp))
+                            Text(if (scanningFaces) "Scanning" else "Track faces")
+                        }
+                    }
+                    if (faceTrack.isNotEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        Text("Face tracking data ready • Portrait export will follow the detected subject.", color = Green, fontSize = 11.sp)
+                    }
+                    facePicks.forEachIndexed { index, time ->
+                        Button(
+                            onClick = {
+                                startMs = (time - 10000L).coerceAtLeast(0L)
+                                endMs = (startMs + 30000L).coerceAtMost(durationMs)
+                                player.seekTo(startMs)
+                                status = "Selected AI face moment ${index + 1}. Adjust trim if needed."
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF242236))
+                        ) { Text("Face moment ${index + 1}  •  ${formatTime(time)}", color = Color.White) }
+                    }
+                }
+                Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(16.dp)) {
                     Text("OUTPUT FORMAT", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -251,7 +309,7 @@ private fun ClipperHome(context: Context) {
                             inner()
                         }
                     )
-                    Text("Adds one styled caption across the whole clip. Automatic speech transcription is not included yet.", color = Muted, fontSize = 10.sp)
+                    Text("Adds a styled caption overlay. Automatic word-by-word speech transcription is a later step.", color = Muted, fontSize = 10.sp)
                 }
                 Button(
                     onClick = {
@@ -261,7 +319,7 @@ private fun ClipperHome(context: Context) {
                         exportProgress = 0f
                         status = "Preparing your clip…"
                         scope.launch {
-                            exportVideo(context, uri, startMs, endMs, portrait, captionText,
+                            exportVideo(context, uri, startMs, endMs, portrait, captionText, faceTrack,
                                 onProgress = { exportProgress = it },
                                 onComplete = { message -> exporting = false; status = message },
                                 onError = { message -> exporting = false; status = message })
@@ -312,6 +370,69 @@ private fun ClipperHome(context: Context) {
 }
 
 private fun Player.isReadyForDuration(): Boolean = playbackState == Player.STATE_READY && duration > 0
+
+private data class FaceTrackPoint(val timeMs: Long, val centerX: Float, val faceCount: Int)
+private data class FaceScanResult(val track: List<FaceTrackPoint>, val picks: List<Long>)
+
+private fun analyseFaces(context: Context, uri: Uri, durationMs: Long): FaceScanResult {
+    if (durationMs < 3000L) return FaceScanResult(emptyList(), emptyList())
+    val options = FaceDetectorOptions.Builder()
+        .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
+        .enableTracking()
+        .build()
+    val detector = FaceDetection.getClient(options)
+    val retriever = MediaMetadataRetriever()
+    val points = mutableListOf<FaceTrackPoint>()
+    val scored = mutableListOf<Pair<Long, Double>>()
+    try {
+        retriever.setDataSource(context, uri)
+        var time = 700L
+        while (time < durationMs - 500L) {
+            val frame = retriever.getFrameAtTime(time * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
+            if (frame != null) {
+                val sample = Bitmap.createScaledBitmap(frame, 640, (640f * frame.height / frame.width).toInt().coerceAtLeast(360), true)
+                if (sample !== frame) frame.recycle()
+                val faces = Tasks.await(detector.process(InputImage.fromBitmap(sample, 0)))
+                if (faces.isNotEmpty()) {
+                    val primary = faces.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() }!!
+                    val center = (primary.boundingBox.centerX().toFloat() / sample.width).coerceIn(0.05f, 0.95f)
+                    points.add(FaceTrackPoint(time, center, faces.size))
+                    val area = primary.boundingBox.width().toDouble() * primary.boundingBox.height() / (sample.width.toDouble() * sample.height)
+                    scored.add(time to (faces.size * 2.0 + area * 8.0))
+                }
+                sample.recycle()
+            }
+            time += 900L
+        }
+    } finally {
+        retriever.release()
+        detector.close()
+    }
+    val picks = mutableListOf<Long>()
+    for ((time, score) in scored.sortedByDescending { it.second }) {
+        if (score < 2.2) continue
+        if (picks.none { kotlin.math.abs(it - time) < 12000L }) picks.add(time)
+        if (picks.size >= 6) break
+    }
+    return FaceScanResult(points, picks.sorted())
+}
+
+private fun createFaceTrackingEffect(points: List<FaceTrackPoint>, clipStartMs: Long): MatrixTransformation {
+    val sorted = points.sortedBy { it.timeMs }
+    return MatrixTransformation { presentationTimeUs ->
+        val absoluteMs = clipStartMs + presentationTimeUs / 1000L
+        val before = sorted.lastOrNull { it.timeMs <= absoluteMs } ?: sorted.first()
+        val after = sorted.firstOrNull { it.timeMs >= absoluteMs } ?: sorted.last()
+        val center = if (before.timeMs == after.timeMs) before.centerX else {
+            val fraction = ((absoluteMs - before.timeMs).toFloat() / (after.timeMs - before.timeMs).toFloat()).coerceIn(0f, 1f)
+            before.centerX + (after.centerX - before.centerX) * fraction
+        }
+        // Presentation performs the 9:16 crop afterwards; this translation moves its crop window toward the tracked face.
+        val target = (center * 2f - 1f).coerceIn(-0.4375f, 0.4375f)
+        Matrix().apply { setTranslate(-target, 0f) }
+    }
+}
+
 
 private fun findScenePicks(context: Context, uri: Uri, durationMs: Long): List<Long> {
     if (durationMs < 4000L) return emptyList()
@@ -373,6 +494,7 @@ private suspend fun exportVideo(
     endMs: Long,
     portrait: Boolean,
     caption: String,
+    faceTrack: List<FaceTrackPoint>,
     onProgress: (Float) -> Unit,
     onComplete: (String) -> Unit,
     onError: (String) -> Unit
@@ -386,16 +508,15 @@ private suspend fun exportVideo(
                 .build()
             val mediaItem = MediaItem.Builder().setUri(source).setClippingConfiguration(clipping).build()
             val videoEffects = mutableListOf<androidx.media3.common.Effect>()
-            if (portrait) videoEffects.add(Presentation.createForHeight(1920))
+            if (portrait) {
+                if (faceTrack.isNotEmpty()) videoEffects.add(createFaceTrackingEffect(faceTrack, startMs))
+                videoEffects.add(Presentation.createForWidthAndHeight(1080, 1920, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+            }
             if (caption.isNotBlank()) {
                 val styledCaption = SpannableString(caption.trim()).apply {
                     setSpan(ForegroundColorSpan(android.graphics.Color.WHITE), 0, length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                 }
-                val settings = StaticOverlaySettings.Builder()
-                    .setOverlayFrameAnchor(0f, -0.82f)
-                    .setBackgroundFrameAnchor(0f, -0.82f)
-                    .build()
-                videoEffects.add(OverlayEffect(listOf(TextOverlay.createStaticTextOverlay(styledCaption, settings))))
+                videoEffects.add(OverlayEffect(listOf(TextOverlay.createStaticTextOverlay(styledCaption))))
             }
             val effects = Effects(emptyList(), videoEffects)
             val edited = EditedMediaItem.Builder(mediaItem).setEffects(effects).build()
