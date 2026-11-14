@@ -416,7 +416,7 @@ private fun ClipperHome(context: Context) {
                                         val speech = if (speechModelReady) {
                                             try {
                                                 withContext(Dispatchers.IO) {
-                                                    SpeechCaptionEngine.transcribe(context, uri) {}
+                                                    SpeechCaptionEngine.transcribe(context, uri) { value -> scope.launch { processingProgress = value * 0.18f } }
                                                 }
                                             } catch (_: Exception) {
                                                 status = "Speech analysis unavailable; continuing with visual scene and face analysis…"
