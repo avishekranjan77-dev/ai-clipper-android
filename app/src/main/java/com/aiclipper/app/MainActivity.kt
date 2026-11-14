@@ -506,10 +506,14 @@ private fun ClipperHome(context: Context) {
                                                 semanticHighlights = SemanticHighlightEngine.analyse(
                                                     context, speechCaptions, durationMs, requestedClipCount.toInt(),
                                                     facePicks, scenePicks, audioEnergy, speakerTurns, highlightFocus,
-                                                    maxClipDurationMs = maxClipDurationSeconds.toLong() * 1000L
-                                                ) { value ->
-                                                    scope.launch { processingProgress = 0.38f + value * 0.30f }
-                                                }
+                                                    maxClipDurationMs = maxClipDurationSeconds.toLong() * 1000L,
+                                                    onProgress = { value ->
+                                                        scope.launch { processingProgress = 0.38f + value * 0.30f }
+                                                    },
+                                                    onStage = { stage ->
+                                                        scope.launch { status = stage }
+                                                    }
+                                                )
                                                 ranges = semanticHighlights.take(requestedClipCount.toInt()).map {
                                                     ClipRange(it.startMs, it.endMs)
                                                 }
