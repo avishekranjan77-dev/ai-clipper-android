@@ -121,6 +121,8 @@ fun GeneratedClipReviewPanel(
                                 try {
                                     withContext(Dispatchers.IO) { saveGeneratedClip(context, clip.file) }
                                     clip.file.delete()
+                                    reviewClips = reviewClips.filterNot { it.file == clip.file }
+                                    selectedIndex = selectedIndex.coerceAtMost((reviewClips.size - 1).coerceAtLeast(0))
                                     savedCount++
                                     onSaved(1)
                                 } catch (error: Exception) { onError(error.localizedMessage ?: "Could not save clip") }
@@ -147,6 +149,8 @@ fun GeneratedClipReviewPanel(
                                 count++
                             }
                         }
+                        reviewClips = reviewClips.filter { it.file.exists() }
+                        selectedIndex = selectedIndex.coerceAtMost((reviewClips.size - 1).coerceAtLeast(0))
                         savedCount += count
                         onSaved(count)
                     } catch (error: Exception) { onError(error.localizedMessage ?: "Some clips could not be saved") }
