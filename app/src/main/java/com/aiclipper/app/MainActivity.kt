@@ -89,6 +89,7 @@ import java.util.Locale
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.FaceDetection
+import com.google.mlkit.vision.face.FaceLandmark
 import com.google.mlkit.vision.face.FaceDetectorOptions
 
 private val AppBackground = Color(0xFF090A0D)
@@ -577,7 +578,7 @@ private fun buildClipMoments(
 private fun Player.isReadyForDuration(): Boolean = playbackState == Player.STATE_READY && duration > 0
 
 private data class FaceTrackPoint(val timeMs: Long, val centerX: Float, val faceCount: Int, val aspectRatio: Float, val primaryFaceId: Int?)
-internal data class FaceCenter(val x: Float, val y: Float)
+internal data class FaceCenter(val x: Float, val y: Float, val mouthOpen: Float = 0f)
 internal data class FaceLayoutSample(val timeMs: Long, val faces: List<FaceCenter>, val sourceAspectRatio: Float)
 private data class FaceScanResult(val track: List<FaceTrackPoint>, val picks: List<Long>, val layouts: List<FaceLayoutSample>)
 
@@ -586,6 +587,7 @@ private fun analyseFaces(context: Context, uri: Uri, durationMs: Long): FaceScan
     val options = FaceDetectorOptions.Builder()
         .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
         .setMinFaceSize(0.06f)
+        .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
         .enableTracking()
         .build()
     val detector = FaceDetection.getClient(options)
@@ -614,9 +616,17 @@ private fun analyseFaces(context: Context, uri: Uri, durationMs: Long): FaceScan
                         layouts.add(FaceLayoutSample(
                             time,
                             pair.map { face ->
+                                val mouthLeft = face.getLandmark(FaceLandmark.MOUTH_LEFT)?.position
+                                val mouthRight = face.getLandmark(FaceLandmark.MOUTH_RIGHT)?.position
+                                val mouthBottom = face.getLandmark(FaceLandmark.MOUTH_BOTTOM)?.position
+                                val mouthOpen = if (mouthLeft != null && mouthRight != null && mouthBottom != null) {
+                                    (kotlin.math.abs(mouthBottom.y - (mouthLeft.y + mouthRight.y) / 2f) /
+                                        face.boundingBox.height().toFloat().coerceAtLeast(1f)).coerceIn(0f, 0.25f)
+                                } else 0f
                                 FaceCenter(
                                     (face.boundingBox.centerX().toFloat() / sample.width).coerceIn(0.05f, 0.95f),
-                                    (face.boundingBox.centerY().toFloat() / sample.height).coerceIn(0.05f, 0.95f)
+                                    (face.boundingBox.centerY().toFloat() / sample.height).coerceIn(0.05f, 0.95f),
+                                    mouthOpen
                                 )
                             },
                             sample.width.toFloat() / sample.height.toFloat()
@@ -845,7 +855,7 @@ private suspend fun exportSuggestedClips(
         val item = MediaItem.Builder().setUri(source).setClippingConfiguration(clipping).build()
         val videoEffects = mutableListOf<androidx.media3.common.Effect>()
         if (twoPersonSplitScreen && faceLayouts.any { it.faces.size >= 2 }) {
-            videoEffects.add(TwoPersonSplitScreenEffect(faceLayouts))
+            videoEffects.add(TwoPersonSplitScreenEffect(faceLayouts, speakerTurns, SpeakerFaceMatcher.assign(speakerTurns, faceLayouts)))
         } else if (faceTrack.isNotEmpty()) {
             videoEffects.add(createFaceTrackingEffect(faceTrack, startMs))
         }
