@@ -178,6 +178,49 @@ private fun ClipperHome(context: Context) {
                     Text("Source length: ${formatTime(durationMs)}  •  Clip length: ${formatTime((endMs - startMs).coerceAtLeast(0L))}", color = Muted, fontSize = 11.sp)
                 }
                 Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f)) {
+                            Text("SMART SCENE PICKS", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text("Find visual scene changes locally on your phone", color = Muted, fontSize = 11.sp)
+                        }
+                        Button(
+                            onClick = {
+                                val uri = selectedVideo ?: return@Button
+                                analysing = true
+                                status = "Analysing video frames on this device…"
+                                scope.launch {
+                                    val picks = withContext(Dispatchers.Default) { findScenePicks(context, uri, durationMs) }
+                                    scenePicks = picks
+                                    analysing = false
+                                    status = if (picks.isEmpty()) "No strong scene changes found. You can still trim manually." else "Found ${picks.size} possible scene-change moments"
+                                }
+                            },
+                            enabled = !analysing,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF292B34))
+                        ) {
+                            if (analysing) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Default.AutoAwesome, contentDescription = null)
+                            Spacer(Modifier.size(5.dp))
+                            Text(if (analysing) "Scanning" else "Find moments")
+                        }
+                    }
+                    if (scenePicks.isNotEmpty()) {
+                        Spacer(Modifier.height(10.dp))
+                        scenePicks.forEachIndexed { index, time ->
+                            Button(
+                                onClick = {
+                                    startMs = (time - 5000L).coerceAtLeast(0L)
+                                    endMs = (startMs + 15000L).coerceAtMost(durationMs)
+                                    player.seekTo(startMs)
+                                    status = "Selected scene pick ${index + 1}. Adjust the trim points if needed."
+                                },
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF242236))
+                            ) { Text("Moment ${index + 1}  •  ${formatTime(time)}", color = Color.White) }
+                        }
+                    }
+                }
+                Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(16.dp)) {
                     Text("OUTPUT FORMAT", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
