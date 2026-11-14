@@ -15,7 +15,7 @@ enum class CaptionStyle(val label: String) {
 }
 
 @UnstableApi
-class TimedCaptionOverlay(
+internal class TimedCaptionOverlay(
     private val cues: List<CaptionCue>,
     private val style: CaptionStyle = CaptionStyle.CLASSIC,
     private val faceSamples: List<FaceLayoutSample> = emptyList(),
