@@ -471,6 +471,7 @@ private fun ClipperHome(context: Context) {
                                         } else {
                                             "Transcribing speech and analysing audio (optional speaker separation skipped)…"
                                         }
+                                        var speechUnavailableMessage: String? = null
                                         val speech = try {
                                             withContext(Dispatchers.IO) {
                                                 SpeechCaptionEngine.transcribe(context, uri, durationMs) { value ->
@@ -481,13 +482,19 @@ private fun ClipperHome(context: Context) {
                                                 }
                                             }
                                         } catch (error: Exception) {
-                                            throw IllegalStateException(
-                                                "Speech recognition failed: ${error.localizedMessage ?: error.javaClass.simpleName}. The clip was not rendered without its requested captions.",
-                                                error
-                                            )
+                                            if (error.localizedMessage?.contains("does not contain an audio track", ignoreCase = true) == true) {
+                                                speechUnavailableMessage = "This source has no audio track. Continuing with visual highlights without spoken captions."
+                                                SpeechAnalysisResult(emptyList(), emptyList(), emptyList())
+                                            } else {
+                                                throw IllegalStateException(
+                                                    "Speech recognition failed: ${error.localizedMessage ?: error.javaClass.simpleName}. The clip was not rendered without its requested captions.",
+                                                    error
+                                                )
+                                            }
                                         }
                                         if (speech.captions.isEmpty()) {
-                                            status = "No speech was detected. Continuing with visual highlights; spoken captions will be empty."
+                                            status = speechUnavailableMessage
+                                                ?: "No speech was detected. Continuing with visual highlights; spoken captions will be empty."
                                         }
                                         speechCaptions = speech.captions
                                         speakerTurns = speech.speakerTurns
