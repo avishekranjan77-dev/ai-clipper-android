@@ -778,6 +778,7 @@ private fun analyseFaces(context: Context, uri: Uri, durationMs: Long, onProgres
     return FaceScanResult(points, picks.sorted(), layouts)
 }
 
+@OptIn(UnstableApi::class)
 private fun createFaceTrackingEffect(points: List<FaceTrackPoint>, clipStartMs: Long, outputAspectName: String = "9:16"): MatrixTransformation {
     val sorted = points.sortedBy { it.timeMs }
     require(sorted.isNotEmpty()) { "Face tracking requires at least one detected face" }
