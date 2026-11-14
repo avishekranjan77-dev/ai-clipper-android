@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Environment
 import android.provider.MediaStore
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -251,12 +252,17 @@ private fun ensureLegacyGalleryPermission(context: Context): Boolean {
 private fun saveGeneratedClip(context: Context, clip: GeneratedClip) {
     val source = clip.file
     val safeTitle = clip.title.replace(Regex("[^A-Za-z0-9_-]+"), "_").trim('_').take(32).ifBlank { "Highlight" }
+    val displayName = "AIClip_${safeTitle}_${System.currentTimeMillis()}.mp4"
     val values = ContentValues().apply {
-        put(MediaStore.Video.Media.DISPLAY_NAME, "AIClip_${safeTitle}_${System.currentTimeMillis()}.mp4")
+        put(MediaStore.Video.Media.DISPLAY_NAME, displayName)
         put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/AI Clipper")
             put(MediaStore.Video.Media.IS_PENDING, 1)
+        } else {
+            val movieFolder = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "AI Clipper")
+            if (!movieFolder.exists() && !movieFolder.mkdirs()) throw java.io.IOException("Could not create the Movies/AI Clipper folder")
+            put(MediaStore.Video.Media.DATA, File(movieFolder, displayName).absolutePath)
         }
     }
     val uri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
