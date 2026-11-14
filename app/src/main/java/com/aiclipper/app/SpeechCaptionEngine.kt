@@ -17,7 +17,8 @@ import java.net.URL
 import java.nio.ByteOrder
 import java.util.zip.ZipInputStream
 
-data class CaptionCue(val startMs: Long, val endMs: Long, val text: String)
+data class CaptionWord(val startMs: Long, val endMs: Long, val text: String)
+data class CaptionCue(val startMs: Long, val endMs: Long, val text: String, val words: List<CaptionWord> = emptyList())
 data class AudioEnergyPoint(val timeMs: Long, val rms: Float)
 data class SpeakerTurn(val startMs: Long, val endMs: Long, val speakerId: Int, val confidence: Float)
 data class SpeechAnalysisResult(val captions: List<CaptionCue>, val audioEnergy: List<AudioEnergyPoint>, val speakerTurns: List<SpeakerTurn>)
@@ -343,13 +344,27 @@ object SpeechCaptionEngine {
         var group = mutableListOf<CaptionCue>()
         for (word in words) {
             if (group.isNotEmpty() && (group.size >= 5 || word.startMs - group.last().endMs > 700L)) {
-                output.add(CaptionCue(group.first().startMs, group.last().endMs, group.joinToString(" ") { it.text }))
+                output.add(
+                    CaptionCue(
+                        group.first().startMs,
+                        group.last().endMs,
+                        group.joinToString(" ") { it.text },
+                        group.map { CaptionWord(it.startMs, it.endMs, it.text) }
+                    )
+                )
                 group = mutableListOf()
             }
             group.add(word)
         }
         if (group.isNotEmpty()) {
-            output.add(CaptionCue(group.first().startMs, group.last().endMs, group.joinToString(" ") { it.text }))
+            output.add(
+                CaptionCue(
+                    group.first().startMs,
+                    group.last().endMs,
+                    group.joinToString(" ") { it.text },
+                    group.map { CaptionWord(it.startMs, it.endMs, it.text) }
+                )
+            )
         }
         return output
     }
