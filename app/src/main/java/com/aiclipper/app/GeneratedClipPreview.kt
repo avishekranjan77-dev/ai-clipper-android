@@ -200,7 +200,7 @@ fun GeneratedClipReviewPanel(
                             savedPaths to firstError
                         }
                         val count = result.first.size
-                        reviewClips = reviewClips.filterNot { it.file.absolutePath in result.first }
+                        reviewClips = reviewClips.filter { it.file.exists() && it.file.absolutePath !in result.first }
                         onClipsChanged(reviewClips)
                         selectedIndex = selectedIndex.coerceAtMost((reviewClips.size - 1).coerceAtLeast(0))
                         savedCount += count
