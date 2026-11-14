@@ -129,11 +129,9 @@ private fun ClipperHome(context: Context) {
     var speakerModelReady by remember { mutableStateOf(SpeechCaptionEngine.isSpeakerModelInstalled(context)) }
     var audioEnergy by remember { mutableStateOf<List<AudioEnergyPoint>>(emptyList()) }
     var speechModelReady by remember { mutableStateOf(SpeechCaptionEngine.isModelInstalled(context)) }
-    var speechBusy by remember { mutableStateOf(false) }
-    var exporting by remember { mutableStateOf(false) }
+    var processing by remember { mutableStateOf(false) }
+    var processingProgress by remember { mutableFloatStateOf(0f) }
     var status by remember { mutableStateOf("Choose a video to start editing") }
-    var exportProgress by remember { mutableFloatStateOf(0f) }
-    var analysing by remember { mutableStateOf(false) }
     var scenePicks by remember { mutableStateOf<List<Long>>(emptyList()) }
     var facePicks by remember { mutableStateOf<List<Long>>(emptyList()) }
     var faceTrack by remember { mutableStateOf<List<FaceTrackPoint>>(emptyList()) }
@@ -189,7 +187,7 @@ private fun ClipperHome(context: Context) {
         facePicks = emptyList()
         scenePicks = emptyList()
         selectedVideoName = uri?.let { queryDisplayName(context, it) }
-        status = if (uri == null) "No video selected" else "Video loaded. Preview, trim and export are ready."
+        status = if (uri == null) "No video selected" else "Video loaded. Choose your settings and create AI clips."
     }
 
     Surface(modifier = Modifier.fillMaxSize(), color = AppBackground) {
@@ -269,367 +267,251 @@ private fun ClipperHome(context: Context) {
                     modifier = Modifier.fillMaxWidth().height(210.dp).background(Color.Black, RoundedCornerShape(18.dp))
                 )
                 Text(selectedVideoName ?: "Selected video", color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                Text("TRIM YOUR CLIP", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
-                Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(16.dp)) {
-                    Text("Start  •  ${formatTime(startMs)}", color = Color.White, fontSize = 13.sp)
-                    Slider(
-                        value = startMs.toFloat().coerceIn(0f, endMs.toFloat().coerceAtLeast(1f)),
-                        onValueChange = { startMs = it.toLong().coerceAtMost((endMs - 1000L).coerceAtLeast(0L)) },
-                        valueRange = 0f..durationMs.toFloat().coerceAtLeast(1f)
-                    )
-                    Text("End  •  ${formatTime(endMs)}", color = Color.White, fontSize = 13.sp)
-                    Slider(
-                        value = endMs.toFloat().coerceIn(startMs.toFloat(), durationMs.toFloat().coerceAtLeast(1f)),
-                        onValueChange = { endMs = it.toLong().coerceAtLeast(startMs + 1000L).coerceAtMost(durationMs) },
-                        valueRange = 0f..durationMs.toFloat().coerceAtLeast(1f)
-                    )
-                    Text("Source length: ${formatTime(durationMs)}  •  Clip length: ${formatTime((endMs - startMs).coerceAtLeast(0L))}", color = Muted, fontSize = 11.sp)
-                }
-                Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.weight(1f)) {
-                            Text("SCENE CHANGE SCAN", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                            Text("Find visual scene changes locally on your phone", color = Muted, fontSize = 11.sp)
-                        }
-                        Button(
-                            onClick = {
-                                val uri = selectedVideo ?: return@Button
-                                analysing = true
-                                status = "Analysing video frames on this device…"
-                                scope.launch {
-                                    val picks = withContext(Dispatchers.Default) { findScenePicks(context, uri, durationMs) }
-                                    scenePicks = picks
-                                    hasAnalysedVideo = true
-                                    analysing = false
-                                    status = if (picks.isEmpty()) "No strong scene changes found. You can still trim manually." else "Found ${picks.size} possible scene-change moments"
-                                }
-                            },
-                            enabled = !analysing,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF292B34))
-                        ) {
-                            if (analysing) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            else Icon(Icons.Default.AutoAwesome, contentDescription = null)
-                            Spacer(Modifier.size(5.dp))
-                            Text(if (analysing) "Scanning" else "Find moments")
-                        }
-                    }
-                    if (scenePicks.isNotEmpty()) {
-                        Spacer(Modifier.height(10.dp))
-                        scenePicks.forEachIndexed { index, time ->
-                            Button(
-                                onClick = {
-                                    startMs = (time - 5000L).coerceAtLeast(0L)
-                                    endMs = (startMs + 15000L).coerceAtMost(durationMs)
-                                    player.seekTo(startMs)
-                                    status = "Selected scene pick ${index + 1}. Adjust the trim points if needed."
-                                },
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF242236))
-                            ) { Text("Moment ${index + 1}  •  ${formatTime(time)}", color = Color.White) }
-                        }
-                    }
-                }
-                Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.weight(1f)) {
-                            Text("AI FACE TRACKING", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                            Text("Track one face or keep multiple people centred in the vertical crop", color = Muted, fontSize = 11.sp)
-                        }
-                        Button(
-                            onClick = {
-                                val uri = selectedVideo ?: return@Button
-                                scanningFaces = true
-                                status = "AI is scanning faces on this device…"
-                                scope.launch {
-                                    try {
-                                        val result = withContext(Dispatchers.Default) { analyseFaces(context, uri, durationMs) }
-                                        faceTrack = result.track
-                                        faceLayouts = result.layouts
-                                        facePicks = result.picks
-                                        hasAnalysedVideo = true
-                                        status = if (result.track.isEmpty()) "No faces detected. You can still use the manual crop." else "Tracked faces in ${result.track.size} sampled moments; found ${result.picks.size} suggested clips."
-                                    } catch (error: Exception) {
-                                        status = "Face analysis failed: ${error.localizedMessage ?: "try another video"}"
-                                    } finally {
-                                        scanningFaces = false
-                                    }
-                                }
-                            },
-                            enabled = !scanningFaces,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF292B34))
-                        ) {
-                            if (scanningFaces) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            else Icon(Icons.Default.AutoAwesome, contentDescription = null)
-                            Spacer(Modifier.size(5.dp))
-                            Text(if (scanningFaces) "Scanning" else "Track faces")
-                        }
-                    }
-                    if (faceTrack.isNotEmpty()) {
-                        Spacer(Modifier.height(6.dp))
-                        Text("Face tracking data ready • Portrait export will shift toward detected faces. Check the exported clip; unsupported framing falls back to centre crop.", color = Green, fontSize = 11.sp)
-                    }
-                    Spacer(Modifier.height(12.dp))
+
+                Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("CREATE YOUR SHORTS", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("Choose your settings once. Everything else runs automatically in the background.", color = Muted, fontSize = 11.sp)
+
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                         Text("NUMBER OF CLIPS", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                        Text("${requestedClipCount.toInt()} clips", color = Accent, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text(requestedClipCount.toInt().toString(), color = Accent, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     }
                     Slider(
                         value = requestedClipCount,
-                        onValueChange = { requestedClipCount = it },
+                        onValueChange = { if (!processing) requestedClipCount = it },
                         valueRange = 1f..30f,
                         steps = 28
                     )
-                    Text(
-                        when {
-                            durationMs < MIN_SHORT_DURATION_MS -> "Shorts export needs at least 1 minute of source footage. This video is too short for a 60-second Short."
-                            hasAnalysedVideo -> if (semanticHighlights.isNotEmpty()) "Language-model understanding is active. Every clip is 60–90 seconds, with transcript, speaker, face, scene and audio evidence combined." else "Choose 1–30 clips. Every AI Short is at least 60 seconds; transcript, audio activity, face and scene signals rank highlights."
-                            else -> "Run Find moments or Track faces first to analyse this video."
-                        },
-                        color = if (durationMs < MIN_SHORT_DURATION_MS) Color(0xFFFFB86B) else Muted,
-                        fontSize = 10.sp
-                    )
-                    Text("CAPTION STYLE", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    Spacer(Modifier.height(8.dp))
+
+                    Text("OUTPUT FORMAT", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        Button(
+                            onClick = { if (!processing) portrait = true },
+                            enabled = !processing,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (portrait) Accent else Color(0xFF292B34))
+                        ) { Text("9:16 Vertical") }
+                        Button(
+                            onClick = { if (!processing) portrait = false },
+                            enabled = !processing,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (!portrait) Accent else Color(0xFF292B34))
+                        ) { Text("Original") }
+                    }
+
+                    Text("CAPTION STYLE", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         CaptionStyle.values().forEach { style ->
-                            Button(onClick = { captionStyle = style }, modifier = Modifier.weight(1f),
+                            Button(
+                                onClick = { if (!processing) captionStyle = style },
+                                enabled = !processing,
+                                modifier = Modifier.weight(1f),
                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 3.dp, vertical = 8.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = if (captionStyle == style) Accent else Color(0xFF292B34))) {
-                                Text(style.label, fontSize = 9.sp, maxLines = 1)
-                            }
+                                colors = ButtonDefaults.buttonColors(containerColor = if (captionStyle == style) Accent else Color(0xFF292B34))
+                            ) { Text(style.label, fontSize = 9.sp, maxLines = 1) }
                         }
                     }
-                    Text("Captions shift to the upper or lower safe area when a detected face is nearby.", color = Muted, fontSize = 10.sp)
-                    Spacer(Modifier.height(10.dp))
-                    val availableMoments = remember(facePicks, scenePicks, speechCaptions, audioEnergy, durationMs, requestedClipCount.toInt(), hasAnalysedVideo, semanticHighlights) { if (semanticHighlights.isNotEmpty()) semanticHighlights.take(requestedClipCount.toInt()).map { it.startMs + 20_000L } else if (hasAnalysedVideo) buildClipMoments(facePicks, scenePicks, speechCaptions, audioEnergy, durationMs, requestedClipCount.toInt()) else emptyList() }
-                    if (availableMoments.isNotEmpty()) {
-                        Button(
-                            onClick = {
-                                val uri = selectedVideo ?: return@Button
-                                exporting = true
-                                val chosenMoments = if (semanticHighlights.isNotEmpty()) semanticHighlights.take(requestedClipCount.toInt()).map { it.startMs + 20_000L } else buildClipMoments(facePicks, scenePicks, speechCaptions, audioEnergy, durationMs, requestedClipCount.toInt())
-                                val chosenRanges = semanticHighlights.take(requestedClipCount.toInt()).map { ClipRange(it.startMs, it.endMs) }
-                                generatedClips.forEach { it.file.delete() }
-                                generatedClips = emptyList()
-                                status = "Creating ${chosenMoments.size} clip previews…"
-                                scope.launch {
-                                    exportSuggestedClips(
-                                        context, uri, chosenMoments, durationMs, faceTrack, faceLayouts, twoPersonSplitScreen, speakerTurns, captionText, speechCaptions, captionStyle, chosenRanges,
-                                        onProgress = { exportProgress = it },
-                                        onComplete = { clips -> generatedClips = clips; exporting = false; status = "${clips.size} previews are ready. Review them and download only the clips you want." },
-                                        onError = { message -> exporting = false; status = message }
-                                    )
-                                }
-                            },
-                            enabled = !exporting,
-                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Accent)
-                        ) {
-                            Icon(Icons.Default.Download, contentDescription = null)
-                            Spacer(Modifier.size(6.dp))
-                            Text("Create ${availableMoments.size} clip previews")
-                        }
-                    }
-                    availableMoments.take(6).forEachIndexed { index, time ->
-                        val semantic = semanticHighlights.getOrNull(index)
-                        Button(
-                            onClick = {
-                                startMs = semantic?.startMs ?: (time - 20000L).coerceAtLeast(0L)
-                                endMs = semantic?.endMs ?: (startMs + MIN_SHORT_DURATION_MS).coerceAtMost(durationMs)
-                                player.seekTo(startMs)
-                                status = semantic?.let { "Selected AI highlight: ${it.title}. ${it.reason}" } ?: "Selected visual highlight ${index + 1}. Adjust trim if needed."
-                            },
-                            modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF242236))
-                        ) { Text(semantic?.let { "${index + 1}. ${it.title}  •  ${it.score}/100" } ?: "Visual moment ${index + 1}  •  ${formatTime(time)}", color = Color.White) }
-                    }
-                }
-                if (generatedClips.isNotEmpty()) {
-                    GeneratedClipReviewPanel(context, generatedClips,
-                        onSaved = { count -> status = "$count clip(s) saved to Gallery." },
-                        onError = { message -> status = message })
-                }
-                Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(16.dp)) {
-                    Text("OUTPUT FORMAT", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    Spacer(Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(onClick = { portrait = true }, colors = ButtonDefaults.buttonColors(containerColor = if (portrait) Accent else Color(0xFF292B34)), modifier = Modifier.weight(1f)) { Text("9:16 Vertical") }
-                        Button(onClick = { portrait = false }, colors = ButtonDefaults.buttonColors(containerColor = if (!portrait) Accent else Color(0xFF292B34)), modifier = Modifier.weight(1f)) { Text("Original") }
-                    }
-                    Text(if (portrait) "Portrait crop for Shorts, Reels and TikTok" else "Keep the source video's original framing", color = Muted, fontSize = 11.sp)
-                    Spacer(Modifier.height(8.dp))
+
                     Button(
-                        onClick = { twoPersonSplitScreen = !twoPersonSplitScreen },
+                        onClick = { if (!processing) twoPersonSplitScreen = !twoPersonSplitScreen },
+                        enabled = !processing,
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = if (twoPersonSplitScreen) Accent else Color(0xFF292B34))
                     ) {
-                        Text(if (twoPersonSplitScreen) "Two-person split screen: ON" else "Two-person split screen: OFF")
+                        Text(if (twoPersonSplitScreen) "Automatic speaker split-screen: ON" else "Automatic speaker split-screen: OFF")
                     }
-                    Text(
-                        if (faceLayouts.isNotEmpty()) "Two-person framing found at ${faceLayouts.size} sampled moments."
-                        else "When two faces are visible, each participant can be framed in a separate panel.",
-                        color = Muted, fontSize = 10.sp
-                    )
-                }
-                Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(16.dp)) {
-                    Text("CAPTION OVERLAY", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    Spacer(Modifier.height(8.dp))
-                    BasicTextField(
-                        value = captionText,
-                        onValueChange = { captionText = it.take(120) },
-                        modifier = Modifier.fillMaxWidth().background(Color(0xFF22242C), RoundedCornerShape(10.dp)).padding(12.dp),
-                        textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 14.sp),
-                        decorationBox = { inner ->
-                            if (captionText.isEmpty()) Text("Type a caption to burn into the exported clip…", color = Muted, fontSize = 13.sp)
-                            inner()
-                        }
-                    )
-                    Button(
-                        onClick = {
-                            val uri = selectedVideo ?: return@Button
-                            speechBusy = true
-                            status = if (speechModelReady) "Transcribing selected video audio offline…" else "Downloading the optional English model…"
-                            scope.launch {
-                                try {
-                                    if (!speechModelReady) {
-                                        withContext(Dispatchers.IO) { SpeechCaptionEngine.downloadModel(context) {} }
-                                        speechModelReady = true
-                                        status = "English speech model installed. Tap again to install speaker recognition."
-                                    } else if (!speakerModelReady) {
-                                        withContext(Dispatchers.IO) { SpeechCaptionEngine.downloadSpeakerModel(context) {} }
-                                        speakerModelReady = true
-                                        status = "Offline speaker-recognition model installed. Tap again to analyse speech and speakers."
-                                    } else {
-                                        val analysis = withContext(Dispatchers.IO) { SpeechCaptionEngine.transcribe(context, uri) {} }
-                                        speechCaptions = analysis.captions
-                                         semanticHighlights = emptyList()
-                                         hasAnalysedVideo = analysis.captions.isNotEmpty() || hasAnalysedVideo
-                                        audioEnergy = analysis.audioEnergy
-                                        speakerTurns = analysis.speakerTurns
-                                        val speakers = analysis.speakerTurns.map { it.speakerId }.distinct().size
-                                        status = when {
-                                            analysis.captions.isNotEmpty() && speakers > 1 -> "Generated timed captions and identified $speakers distinct voices across ${analysis.speakerTurns.size} speech turns."
-                                            analysis.captions.isNotEmpty() && speakers == 1 -> "Generated timed captions. One distinct voice was identified."
-                                            analysis.captions.isNotEmpty() -> "Generated timed captions and audio activity. Speaker turns were not confidently identified."
-                                            analysis.audioEnergy.isNotEmpty() -> "No clear speech detected; audio activity analysis is ready."
-                                            else -> "No clear speech or usable audio activity detected."
-                                        }
-                                    }
-                                } catch (error: Exception) {
-                                    status = "Caption generation failed: " + (error.localizedMessage ?: "unknown error")
-                                } finally {
-                                    speechBusy = false
-                                }
-                            }
-                        },
-                        enabled = !speechBusy,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF292B34))
-                    ) {
-                        if (speechBusy) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        else Icon(Icons.Default.AutoAwesome, contentDescription = null)
-                        Spacer(Modifier.size(6.dp))
-                        Text(if (speechBusy) "Working…" else if (!speechModelReady) "Download English model" else if (!speakerModelReady) "Download speaker AI model" else "Generate captions + identify speakers")
-                    }
-                    if (speakerTurns.isNotEmpty()) {
-                        val detectedSpeakers = speakerTurns.map { it.speakerId }.distinct().sorted()
-                        Text("Voice diarization: " + detectedSpeakers.joinToString(" • ") { "Speaker $it" } + "  |  " + speakerTurns.size + " turns", color = Green, fontSize = 11.sp)
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Column(Modifier.fillMaxWidth().background(Color(0xFF20202A), RoundedCornerShape(14.dp)).padding(12.dp)) {
-                        Text("SEMANTIC HIGHLIGHT AI", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Text(
-                            if (semanticModelReady) "Qwen3-0.6B is installed. It analyses what the conversation means, not just trigger words."
-                            else "Free on-device Qwen3 language model • one-time download (${SemanticHighlightEngine.MODEL_SIZE_LABEL}) • works offline afterwards.",
-                            color = Muted, fontSize = 10.sp
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Button(
-                            onClick = {
-                                if (speechCaptions.isEmpty()) {
-                                    status = "Generate speech captions first so the language model has a timestamped transcript."
-                                } else {
+
+                    if (!semanticModelReady) {
+                        Column(Modifier.fillMaxWidth().background(Color(0xFF20202A), RoundedCornerShape(14.dp)).padding(12.dp)) {
+                            Text("ONE-TIME AI SETUP", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text("Download the free language model once. This panel disappears after installation.", color = Muted, fontSize = 10.sp)
+                            Button(
+                                onClick = {
+                                    if (semanticBusy || processing) return@Button
                                     semanticBusy = true
                                     semanticProgress = 0f
-                                    status = if (semanticModelReady) "The on-device language model is understanding the conversation…" else "Downloading the free AI language model…"
+                                    status = "Downloading the one-time AI model…"
                                     scope.launch {
                                         try {
-                                            if (!semanticModelReady) {
-                                                withContext(Dispatchers.IO) {
-                                                    SemanticHighlightEngine.downloadModel(context) { value ->
-                                                        scope.launch { semanticProgress = value }
-                                                    }
+                                            withContext(Dispatchers.IO) {
+                                                SemanticHighlightEngine.downloadModel(context) { value ->
+                                                    scope.launch { semanticProgress = value }
                                                 }
-                                                semanticModelReady = true
-                                                status = "AI model installed. Tap again to analyse the conversation."
-                                            } else {
-                                                val result = SemanticHighlightEngine.analyse(
-                                                    context, speechCaptions, durationMs, requestedClipCount.toInt(),
-                                                    facePicks, scenePicks, audioEnergy, speakerTurns
-                                                ) { value -> scope.launch { semanticProgress = value } }
-                                                semanticHighlights = result
-                                                hasAnalysedVideo = true
-                                                status = if (result.isEmpty()) "The language model found no valid 60–90 second moments. Signal-based suggestions remain available."
-                                                    else "Semantic AI found ${result.size} meaningful, non-overlapping highlights. Review them before exporting."
                                             }
+                                            semanticModelReady = true
+                                            status = "AI model installed. It will now run automatically."
                                         } catch (error: Exception) {
-                                            status = "Semantic AI could not complete: ${error.localizedMessage ?: "model/runtime error"}. Existing offline suggestions remain available."
+                                            status = "AI model download failed."
                                         } finally {
                                             semanticBusy = false
                                         }
                                     }
-                                }
-                            },
-                            enabled = !semanticBusy && speechCaptions.isNotEmpty(),
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = Accent)
-                        ) {
-                            if (semanticBusy) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            else Icon(Icons.Default.AutoAwesome, contentDescription = null)
-                            Spacer(Modifier.size(6.dp))
-                            Text(if (semanticBusy) "AI analysing…" else if (!semanticModelReady) "Download free AI model" else "Understand conversation with AI")
-                        }
-                        if (semanticBusy) {
-                            Spacer(Modifier.height(6.dp))
-                            androidx.compose.material3.LinearProgressIndicator(progress = { semanticProgress }, modifier = Modifier.fillMaxWidth(), color = Accent)
-                        }
-                        semanticHighlights.take(5).forEachIndexed { index, item ->
-                            Text("${index + 1}. ${item.title}  •  ${item.score}/100", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                            Text(item.reason, color = Muted, fontSize = 10.sp)
+                                },
+                                enabled = !semanticBusy && !processing,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                            ) {
+                                if (semanticBusy) CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                else Icon(Icons.Default.Download, contentDescription = null)
+                                Spacer(Modifier.size(6.dp))
+                                Text(if (semanticBusy) "Downloading AI…" else "Download free AI model")
+                            }
+                            if (semanticBusy) {
+                                androidx.compose.material3.LinearProgressIndicator(progress = { semanticProgress }, modifier = Modifier.fillMaxWidth(), color = Accent)
+                            }
                         }
                     }
+
+                    if (processing) {
+                        Column(Modifier.fillMaxWidth().background(Color(0xFF20202A), RoundedCornerShape(14.dp)).padding(12.dp)) {
+                            Text("AI EDITING IN PROGRESS", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text(status, color = Muted, fontSize = 11.sp)
+                            Spacer(Modifier.height(7.dp))
+                            androidx.compose.material3.LinearProgressIndicator(progress = { processingProgress }, modifier = Modifier.fillMaxWidth(), color = Accent)
+                            Spacer(Modifier.height(5.dp))
+                            Text("Analysis, editing and rendering are running automatically. Controls stay disabled until the finished clips are ready.", color = Muted, fontSize = 9.sp)
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                val uri = selectedVideo ?: return@Button
+                                if (durationMs < MIN_SHORT_DURATION_MS) {
+                                    status = "This video is shorter than the 60-second minimum."
+                                    return@Button
+                                }
+                                processing = true
+                                processingProgress = 0f
+                                generatedClips.forEach { it.file.delete() }
+                                generatedClips = emptyList()
+                                semanticHighlights = emptyList()
+                                status = "Starting automatic editing…"
+
+                                scope.launch {
+                                    try {
+                                        if (!speechModelReady) {
+                                            status = "Installing offline speech recognition…"
+                                            withContext(Dispatchers.IO) { SpeechCaptionEngine.downloadModel(context) {} }
+                                            speechModelReady = true
+                                        }
+                                        if (!speakerModelReady) {
+                                            status = "Installing speaker recognition…"
+                                            withContext(Dispatchers.IO) { SpeechCaptionEngine.downloadSpeakerModel(context) {} }
+                                            speakerModelReady = true
+                                        }
+
+                                        status = "Transcribing speech and analysing audio…"
+                                        val speech = withContext(Dispatchers.IO) {
+                                            SpeechCaptionEngine.transcribe(context, uri) {}
+                                        }
+                                        speechCaptions = speech.captions
+                                        speakerTurns = speech.speakerTurns
+                                        audioEnergy = speech.audioEnergy
+                                        processingProgress = 0.18f
+
+                                        status = "Tracking faces and scene changes…"
+                                        val faceResult = withContext(Dispatchers.Default) {
+                                            analyseFaces(context, uri, durationMs)
+                                        }
+                                        faceTrack = faceResult.track
+                                        faceLayouts = faceResult.layouts
+                                        facePicks = faceResult.picks
+                                        scenePicks = withContext(Dispatchers.Default) {
+                                            findScenePicks(context, uri, durationMs)
+                                        }
+                                        processingProgress = 0.38f
+
+                                        var ranges: List<ClipRange> = emptyList()
+                                        if (semanticModelReady && speechCaptions.isNotEmpty()) {
+                                            status = "Understanding the conversation with on-device AI…"
+                                            semanticHighlights = SemanticHighlightEngine.analyse(
+                                                context, speechCaptions, durationMs, requestedClipCount.toInt(),
+                                                facePicks, scenePicks, audioEnergy, speakerTurns
+                                            ) { value ->
+                                                scope.launch { processingProgress = 0.38f + value * 0.30f }
+                                            }
+                                            ranges = semanticHighlights.take(requestedClipCount.toInt()).map {
+                                                ClipRange(it.startMs, it.endMs)
+                                            }
+                                        } else {
+                                            status = "Ranking the strongest moments…"
+                                            processingProgress = 0.60f
+                                        }
+
+                                        val moments = if (ranges.isNotEmpty()) {
+                                            ranges.map { it.startMs + 20_000L }
+                                        } else {
+                                            buildClipMoments(
+                                                facePicks, scenePicks, speechCaptions, audioEnergy,
+                                                durationMs, requestedClipCount.toInt()
+                                            )
+                                        }
+
+                                        val usableRanges = if (ranges.isNotEmpty()) {
+                                            ranges
+                                        } else {
+                                            ClipIntelligence.buildExportRanges(moments, durationMs)
+                                                .take(requestedClipCount.toInt())
+                                        }
+
+                                        if (usableRanges.isEmpty()) {
+                                            throw IllegalStateException("AI could not find any usable 60-second moments.")
+                                        }
+
+                                        status = "Rendering edited clips…"
+                                        processingProgress = 0.70f
+
+                                        exportSuggestedClips(
+                                            context, uri, moments, durationMs, faceTrack, faceLayouts,
+                                            twoPersonSplitScreen, speakerTurns, captionText, speechCaptions,
+                                            captionStyle, usableRanges,
+                                            onProgress = { value ->
+                                                scope.launch {
+                                                    processingProgress = 0.70f + value * 0.30f
+                                                }
+                                            },
+                                            onComplete = { clips ->
+                                                generatedClips = clips
+                                                processing = false
+                                                processingProgress = 1f
+                                                status = "Finished. Review the edited clips below."
+                                            },
+                                            onError = { message ->
+                                                processing = false
+                                                status = message
+                                            }
+                                        )
+                                    } catch (error: Exception) {
+                                        processing = false
+                                        status = "Automatic editing stopped."
+                                    }
+                                }
+                            },
+                            enabled = !processing && !semanticBusy && durationMs >= MIN_SHORT_DURATION_MS,
+                            modifier = Modifier.fillMaxWidth().height(54.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                        ) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null)
+                            Spacer(Modifier.size(8.dp))
+                            Text("Create AI clips", fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
                     Text(
-                        if (speechCaptions.isNotEmpty()) "Timed captions ready: " + speechCaptions.size + " lines • audio activity analysed"
-                        else if (audioEnergy.isNotEmpty()) "Audio activity analysed; no clear speech was recognised."
-                        else if (speechModelReady) "Speech recognition runs offline on this phone."
-                        else "First download needs internet and extra storage; transcription then runs offline.",
-                        color = if (speechCaptions.isNotEmpty()) Green else Muted,
+                        if (durationMs < MIN_SHORT_DURATION_MS) "Source must be at least 60 seconds."
+                        else "The next screen appears only after the edited video files have actually been rendered.",
+                        color = Muted,
                         fontSize = 10.sp
                     )
                 }
-                Button(
-                    onClick = {
-                        val uri = selectedVideo ?: return@Button
-                        if (endMs <= startMs) { status = "Choose a valid trim range"; return@Button }
-                        exporting = true
-                        exportProgress = 0f
-                        status = "Preparing your clip…"
-                        scope.launch {
-                            exportVideo(context, uri, startMs, endMs, portrait, captionText, faceTrack, faceLayouts, speechCaptions, captionStyle,
-                                onProgress = { exportProgress = it },
-                                onComplete = { message -> exporting = false; status = message },
-                                onError = { message -> exporting = false; status = message })
-                        }
-                    },
-                    enabled = !exporting,
-                    modifier = Modifier.fillMaxWidth().height(54.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Accent)
-                ) {
-                    if (exporting) CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
-                    else Icon(Icons.Default.Download, contentDescription = null)
-                    Spacer(Modifier.size(8.dp))
-                    Text(if (exporting) "Exporting…" else "Export clip to Gallery", fontWeight = FontWeight.SemiBold)
+
+                if (generatedClips.isNotEmpty()) {
+                    GeneratedClipReviewPanel(
+                        context,
+                        generatedClips,
+                        onSaved = { count -> status = "Clips saved to Gallery." },
+                        onError = { message -> status = message }
+                    )
                 }
             } else {
                 Box(Modifier.weight(1f).fillMaxWidth().background(Panel, RoundedCornerShape(24.dp)), contentAlignment = Alignment.Center) {
@@ -638,7 +520,7 @@ private fun ClipperHome(context: Context) {
                         Spacer(Modifier.height(18.dp))
                         Text("Turn long videos into shareable clips", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(8.dp))
-                        Text("Import a video to preview it, select a section, choose vertical or original format, and export it to your Gallery.", color = Muted, fontSize = 13.sp, lineHeight = 20.sp)
+                        Text("Import a video, choose the number and format, then let AI do the analysis, editing and rendering automatically.", color = Muted, fontSize = 13.sp, lineHeight = 20.sp)
                     }
                 }
             }
