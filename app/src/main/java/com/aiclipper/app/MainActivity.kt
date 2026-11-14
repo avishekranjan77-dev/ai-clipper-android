@@ -241,7 +241,7 @@ private fun ClipperHome(context: Context) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.weight(1f)) {
                             Text("AI FACE TRACKING", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                            Text("Detect people and follow the main speaker locally", color = Muted, fontSize = 11.sp)
+                            Text("Track one face or keep multiple people centred in the vertical crop", color = Muted, fontSize = 11.sp)
                         }
                         Button(
                             onClick = {
@@ -272,7 +272,7 @@ private fun ClipperHome(context: Context) {
                     }
                     if (faceTrack.isNotEmpty()) {
                         Spacer(Modifier.height(6.dp))
-                        Text("Face tracking data ready • Portrait export will follow the detected subject.", color = Green, fontSize = 11.sp)
+                        Text("Face tracking ready • Portrait export follows the detected face or group centre.", color = Green, fontSize = 11.sp)
                     }
                     if (facePicks.isNotEmpty()) {
                         Button(
@@ -418,11 +418,14 @@ private fun analyseFaces(context: Context, uri: Uri, durationMs: Long): FaceScan
                 if (sample !== frame) frame.recycle()
                 val faces = Tasks.await(detector.process(InputImage.fromBitmap(sample, 0)))
                 if (faces.isNotEmpty()) {
-                    val primary = faces.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() }!!
-                    val center = (primary.boundingBox.centerX().toFloat() / sample.width).coerceIn(0.05f, 0.95f)
+                    // Average all detected face centres so conversations stay framed as a group.
+                    val center = (faces.map { it.boundingBox.centerX().toFloat() }.average().toFloat() / sample.width)
+                        .coerceIn(0.05f, 0.95f)
                     points.add(FaceTrackPoint(time, center, faces.size))
-                    val area = primary.boundingBox.width().toDouble() * primary.boundingBox.height() / (sample.width.toDouble() * sample.height)
-                    scored.add(time to (faces.size * 2.0 + area * 8.0))
+                    val totalFaceArea = faces.sumOf {
+                        it.boundingBox.width().toDouble() * it.boundingBox.height()
+                    } / (sample.width.toDouble() * sample.height)
+                    scored.add(time to (faces.size * 2.0 + totalFaceArea.coerceAtMost(1.0) * 8.0))
                 }
                 sample.recycle()
             }
