@@ -47,7 +47,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
 
-data class GeneratedClip(val file: File, val startMs: Long, val endMs: Long) {
+data class GeneratedClip(val file: File, val startMs: Long, val endMs: Long, val aspectRatio: String = "9:16") {
     val durationMs: Long get() = endMs - startMs
 }
 
