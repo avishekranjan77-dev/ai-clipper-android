@@ -66,6 +66,7 @@ fun ClipAdjustmentEditor(clip: GeneratedClip, onCancel: () -> Unit, onRendered: 
     var trimEnd by remember(clip.file.absolutePath) { mutableFloatStateOf(1f) }
     var rendering by remember { mutableStateOf(false) }
     val duration = clip.durationMs.coerceAtLeast(1L)
+    val minimumTrimFraction = (60_000f / duration.toFloat()).coerceAtMost(1f)
     Column(Modifier.fillMaxWidth().background(Color(0xFF20222A), RoundedCornerShape(14.dp)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Text("ADJUST CLIP", color = Color.White, fontSize = 13.sp)
         Text("Set the output frame, then drag the preview or use the controls. The new framing is applied when you re-render.", color = Color(0xFF9295A1), fontSize = 10.sp)
@@ -117,9 +118,10 @@ fun ClipAdjustmentEditor(clip: GeneratedClip, onCancel: () -> Unit, onRendered: 
         Text("Vertical framing", color = Color.White, fontSize = 12.sp)
         Slider(value = vertical, onValueChange = { vertical = it }, valueRange = -1f..1f)
         Text("Trim start  ${(trimStart * duration / 1000).toInt()}s", color = Color.White, fontSize = 12.sp)
-        Slider(value = trimStart, onValueChange = { trimStart = it.coerceAtMost(trimEnd - 0.1f) }, valueRange = 0f..0.9f)
+        Slider(value = trimStart, onValueChange = { trimStart = it.coerceAtMost(trimEnd - minimumTrimFraction) }, valueRange = 0f..(1f - minimumTrimFraction).coerceAtLeast(0f))
         Text("Trim end  ${(trimEnd * duration / 1000).toInt()}s", color = Color.White, fontSize = 12.sp)
-        Slider(value = trimEnd, onValueChange = { trimEnd = it.coerceAtLeast(trimStart + 0.1f) }, valueRange = 0.1f..1f)
+        Text("Trimming always keeps the finished clip at least 60 seconds long.", color = Color(0xFF9295A1), fontSize = 10.sp)
+        Slider(value = trimEnd, onValueChange = { trimEnd = it.coerceAtLeast(trimStart + minimumTrimFraction) }, valueRange = minimumTrimFraction..1f)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onCancel, enabled = !rendering, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF343640))) { Text("Cancel") }
             Button(onClick = {
