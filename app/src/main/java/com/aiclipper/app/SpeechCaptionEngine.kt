@@ -157,22 +157,33 @@ object SpeechCaptionEngine {
         return target
     }
 
-    fun transcribe(context: Context, source: Uri, onProgress: (Float) -> Unit): SpeechAnalysisResult {
+    fun transcribe(context: Context, source: Uri, durationMs: Long, onProgress: (Float) -> Unit): SpeechAnalysisResult {
         val modelDir = File(context.filesDir, MODEL_NAME)
-        if (!File(modelDir, "conf/model.conf").isFile) {
-            throw IllegalStateException("Download the English speech model first")
+        if (!isModelInstalled(context)) {
+            throw IllegalStateException("The offline English speech model is not installed correctly.")
         }
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
-        val model = Model(modelDir.absolutePath)
-        val speakerModel = if (isSpeakerModelInstalled(context)) SpeakerModel(File(context.filesDir, SPEAKER_MODEL_NAME).absolutePath) else null
-        val recognizer = if (speakerModel != null) Recognizer(model, TARGET_RATE.toFloat(), speakerModel) else Recognizer(model, TARGET_RATE.toFloat())
-        recognizer.setWords(true)
+        var model: Model? = null
+        var speakerModel: SpeakerModel? = null
+        var recognizerForCleanup: Recognizer? = null
         val rawWords = mutableListOf<CaptionCue>()
         val speakerTurns = mutableListOf<SpeakerTurn>()
         val speakerClusters = mutableListOf<SpeakerCluster>()
         val energyBuckets = sortedMapOf<Long, EnergyBucket>()
         try {
+            val loadedModel = Model(modelDir.absolutePath)
+            model = loadedModel
+            val loadedSpeakerModel = if (isSpeakerModelInstalled(context)) {
+                SpeakerModel(File(context.filesDir, SPEAKER_MODEL_NAME).absolutePath).also { speakerModel = it }
+            } else null
+            val recognizer = if (loadedSpeakerModel != null) {
+                Recognizer(loadedModel, TARGET_RATE.toFloat(), loadedSpeakerModel)
+            } else {
+                Recognizer(loadedModel, TARGET_RATE.toFloat())
+            }
+            recognizerForCleanup = recognizer
+            recognizer.setWords(true)
             extractor.setDataSource(context, source, null)
             var audioTrack = -1
             var format: MediaFormat? = null
@@ -258,8 +269,9 @@ object SpeechCaptionEngine {
                         if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputDone = true
                         codec.releaseOutputBuffer(outputIndex, false)
                         val now = System.currentTimeMillis()
-                        if (now - lastProgressUpdate > 500) {
-                            onProgress((extractor.sampleTime.coerceAtLeast(0L).toFloat() / 1_000_000f).coerceIn(0f, 0.95f))
+                        if (now - lastProgressUpdate > 350) {
+                            val totalDurationUs = durationMs.coerceAtLeast(1L) * 1000L
+                            onProgress((info.presentationTimeUs.coerceAtLeast(0L).toFloat() / totalDurationUs.toFloat()).coerceIn(0f, 0.99f))
                             lastProgressUpdate = now
                         }
                     }
@@ -271,14 +283,15 @@ object SpeechCaptionEngine {
                     kotlin.math.sqrt(bucket.sumSquares / bucket.sampleCount.toDouble()) / 32768.0
                 AudioEnergyPoint(second * 1000L, rms.toFloat())
             }
+            onProgress(1f)
             return SpeechAnalysisResult(groupWords(rawWords), energy, speakerTurns)
         } finally {
             try { codec?.stop() } catch (_: Exception) {}
             codec?.release()
             extractor.release()
-            recognizer.close()
-            speakerModel?.close()
-            model.close()
+            try { recognizerForCleanup?.close() } catch (_: Exception) {}
+            try { speakerModel?.close() } catch (_: Exception) {}
+            try { model?.close() } catch (_: Exception) {}
         }
     }
 
