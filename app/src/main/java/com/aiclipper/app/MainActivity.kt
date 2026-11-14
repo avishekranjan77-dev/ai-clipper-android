@@ -482,7 +482,8 @@ private fun ClipperHome(context: Context) {
                                         )
                                     } catch (error: Exception) {
                                         processing = false
-                                        status = "Automatic editing stopped."
+                                        processingProgress = 0f
+                                        status = "Automatic editing failed: ${error.localizedMessage ?: error.javaClass.simpleName}. Your source video is unchanged; check storage space and model availability, then retry."
                                     }
                                 }
                             },
