@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -61,6 +62,7 @@ fun GeneratedClipReviewPanel(
     var selectedIndex by remember { mutableIntStateOf(0) }
     var busy by remember { mutableStateOf(false) }
     var savedCount by remember { mutableIntStateOf(0) }
+    var editingIndex by remember { mutableIntStateOf(-1) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(clips, selectedIndex) {
@@ -80,6 +82,20 @@ fun GeneratedClipReviewPanel(
             modifier = Modifier.fillMaxWidth().height(250.dp).background(Color.Black, RoundedCornerShape(12.dp))
         )
         Text("Previewing clip ${selectedIndex + 1} of ${clips.size}", color = Color.White, fontSize = 12.sp)
+        if (editingIndex in clips.indices) {
+            ClipAdjustmentEditor(
+                clip = clips[editingIndex],
+                onCancel = { editingIndex = -1 },
+                onRendered = { replacement ->
+                    val updated = clips.toMutableList()
+                    updated[editingIndex] = replacement
+                    editingIndex = -1
+                    selectedIndex = editingIndex.coerceAtLeast(0)
+                    onError("Adjusted clip rendered. Reopen the preview to review the updated file.")
+                },
+                onError = onError
+            )
+        }
         LazyColumn(modifier = Modifier.fillMaxWidth().height(230.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             itemsIndexed(clips) { index, clip ->
                 Row(Modifier.fillMaxWidth().background(if (index == selectedIndex) Color(0xFF29263F) else Color(0xFF22242C), RoundedCornerShape(10.dp)).padding(9.dp), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -92,6 +108,10 @@ fun GeneratedClipReviewPanel(
                         Text("Preview")
                     }
                     Spacer(Modifier.size(4.dp))
+                    Button(onClick = { selectedIndex = index; editingIndex = index; player.pause() }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF343044))) {
+                        androidx.compose.material3.Icon(Icons.Default.Tune, contentDescription = "Adjust clip")
+                        Text("Adjust")
+                    }
                     Button(
                         onClick = {
                             if (busy) return@Button
