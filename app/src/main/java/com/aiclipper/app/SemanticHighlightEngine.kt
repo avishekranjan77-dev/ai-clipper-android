@@ -195,7 +195,7 @@ object SemanticHighlightEngine {
         } finally {
             conversation.close()
         }
-        val fence = String(charArrayOf(96, 96, 96))
+        val fence = 96.toChar().toString().repeat(3)
         val cleaned = response.substringAfter("</think>", response).replace(fence + "json", "").replace(fence, "")
         val first = cleaned.indexOf('{')
         val last = cleaned.lastIndexOf('}')
@@ -278,7 +278,7 @@ object SemanticHighlightEngine {
         windowEnd: Long,
         captions: List<CaptionCue>
     ): List<SemanticHighlight> {
-        val fence = String(charArrayOf(96, 96, 96))
+        val fence = 96.toChar().toString().repeat(3)
         val cleaned = raw.substringAfter("</think>", raw).replace(fence + "json", "").replace(fence, "")
         val first = cleaned.indexOf('{')
         val last = cleaned.lastIndexOf('}')
