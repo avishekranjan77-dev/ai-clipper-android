@@ -118,10 +118,10 @@ fun ClipAdjustmentEditor(clip: GeneratedClip, onCancel: () -> Unit, onRendered: 
         Text("Vertical framing", color = Color.White, fontSize = 12.sp)
         Slider(value = vertical, onValueChange = { vertical = it }, valueRange = -1f..1f)
         Text("Trim start  ${(trimStart * duration / 1000).toInt()}s", color = Color.White, fontSize = 12.sp)
-        Slider(value = trimStart, onValueChange = { trimStart = it.coerceAtMost(trimEnd - minimumTrimFraction) }, valueRange = 0f..(1f - minimumTrimFraction).coerceAtLeast(0f))
+        Slider(value = trimStart, onValueChange = { trimStart = it.coerceAtMost(trimEnd - minimumTrimFraction) }, enabled = minimumTrimFraction < 1f, valueRange = 0f..(1f - minimumTrimFraction).coerceAtLeast(0.0001f))
         Text("Trim end  ${(trimEnd * duration / 1000).toInt()}s", color = Color.White, fontSize = 12.sp)
         Text("Trimming always keeps the finished clip at least 60 seconds long.", color = Color(0xFF9295A1), fontSize = 10.sp)
-        Slider(value = trimEnd, onValueChange = { trimEnd = it.coerceAtLeast(trimStart + minimumTrimFraction) }, valueRange = minimumTrimFraction..1f)
+        Slider(value = trimEnd, onValueChange = { trimEnd = it.coerceAtLeast(trimStart + minimumTrimFraction) }, enabled = minimumTrimFraction < 1f, valueRange = minimumTrimFraction.coerceAtMost(0.9999f)..1f)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onCancel, enabled = !rendering, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF343640))) { Text("Cancel") }
             Button(onClick = {
