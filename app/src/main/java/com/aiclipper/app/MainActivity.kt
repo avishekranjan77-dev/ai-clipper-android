@@ -436,7 +436,7 @@ private fun ClipperHome(context: Context) {
 
 private fun Player.isReadyForDuration(): Boolean = playbackState == Player.STATE_READY && duration > 0
 
-private data class FaceTrackPoint(val timeMs: Long, val centerX: Float, val faceCount: Int)
+private data class FaceTrackPoint(val timeMs: Long, val centerX: Float, val faceCount: Int, val aspectRatio: Float)
 private data class FaceScanResult(val track: List<FaceTrackPoint>, val picks: List<Long>)
 
 private fun analyseFaces(context: Context, uri: Uri, durationMs: Long): FaceScanResult {
@@ -463,7 +463,7 @@ private fun analyseFaces(context: Context, uri: Uri, durationMs: Long): FaceScan
                     // Average all detected face centres so conversations stay framed as a group.
                     val center = (faces.map { it.boundingBox.centerX().toFloat() }.average().toFloat() / sample.width)
                         .coerceIn(0.05f, 0.95f)
-                    points.add(FaceTrackPoint(time, center, faces.size))
+                    points.add(FaceTrackPoint(time, center, faces.size, sample.width.toFloat() / sample.height.toFloat()))
                     val totalFaceArea = faces.sumOf {
                         it.boundingBox.width().toDouble() * it.boundingBox.height()
                     } / (sample.width.toDouble() * sample.height)
@@ -508,7 +508,13 @@ private fun createFaceTrackingEffect(points: List<FaceTrackPoint>, clipStartMs: 
             (interpolated * 0.55f + nearby.map { it.centerX }.average().toFloat() * 0.45f)
         // The 9:16 crop can move substantially away from the source centre on landscape footage.
         // MatrixTransformation operates in normalized device coordinates (-1..1).
-        val desiredOffset = ((smoothed - 0.5f) * 2f).coerceIn(-0.68f, 0.68f)
+        val inputAspect = sorted.first().aspectRatio.coerceAtLeast(0.1f)
+        val outputAspect = 9f / 16f
+        // Compensate for the scale applied by the later 9:16 Presentation effect.
+        val cropScale = inputAspect / outputAspect
+        val desiredOffset = if (inputAspect > outputAspect) {
+            (((smoothed - 0.5f) * 2f) / cropScale).coerceIn(-0.32f, 0.32f)
+        } else 0f
         Matrix().apply { postTranslate(-desiredOffset, 0f) }
     }
 }
@@ -629,6 +635,7 @@ private suspend fun exportVideo(
     }
 }
 
+@OptIn(UnstableApi::class)
 private suspend fun exportSuggestedClips(
     context: Context,
     source: Uri,
