@@ -387,7 +387,14 @@ private fun ClipperHome(context: Context) {
                                         try {
                                             withContext(Dispatchers.IO) {
                                                 SemanticHighlightEngine.downloadModel(context) { value ->
-                                                    scope.launch { semanticProgress = value }
+                                                    scope.launch {
+                                                        semanticProgress = value
+                                                        status = if (value < 0.98f) {
+                                                            "Downloading on-device AI model… ${(value * 100).toInt()}%"
+                                                        } else {
+                                                            "Verifying and installing on-device AI model…"
+                                                        }
+                                                    }
                                                 }
                                             }
                                             semanticModelReady = true
