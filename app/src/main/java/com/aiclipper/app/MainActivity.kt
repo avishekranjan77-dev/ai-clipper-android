@@ -360,7 +360,7 @@ private suspend fun exportVideo(
                 .build()
             val mediaItem = MediaItem.Builder().setUri(source).setClippingConfiguration(clipping).build()
             val effects = if (portrait) {
-                Effects(emptyList(), listOf(Presentation.createForHeight(1920, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP)))
+                Effects(emptyList(), listOf(Presentation.createForHeight(1920)))
             } else Effects(emptyList(), emptyList())
             val edited = EditedMediaItem.Builder(mediaItem).setEffects(effects).build()
             val transformer = Transformer.Builder(context).addListener(object : Transformer.Listener {
