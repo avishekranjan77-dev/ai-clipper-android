@@ -90,4 +90,20 @@ class ClipIntelligenceTest {
         assertTrue(ranges.all { it.endMs <= 600_000L })
     }
 
+
+    @Test fun selectedMaximumLongerThanSourceStillProducesOneValidShort() {
+        val moments = ClipIntelligence.selectMoments(
+            faceMoments = emptyList(),
+            sceneMoments = emptyList(),
+            speechCaptions = emptyList(),
+            audioEnergy = emptyList(),
+            durationMs = 90_000L,
+            requestedCount = 1,
+            clipDurationMs = 180_000L
+        )
+        val ranges = ClipIntelligence.buildExportRanges(moments, 90_000L)
+        assertEquals(1, ranges.size)
+        assertEquals(60_000L, ranges.single().durationMs)
+    }
+
 }
