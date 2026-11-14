@@ -343,7 +343,7 @@ private fun ClipperHome(context: Context) {
                                             semanticModelReady = true
                                             status = "AI model installed. It will now run automatically."
                                         } catch (error: Exception) {
-                                            status = "AI model download failed."
+                                            status = "AI model download failed: ${error.localizedMessage ?: "check your connection and free storage"}."
                                         } finally {
                                             semanticBusy = false
                                         }
