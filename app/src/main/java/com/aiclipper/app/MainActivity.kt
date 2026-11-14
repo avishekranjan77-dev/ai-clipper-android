@@ -536,11 +536,11 @@ private fun ClipperHome(context: Context) {
                 Text(if (selectedVideo == null) "Choose video from Gallery" else "Change video")
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (!exporting && status.startsWith("Clip saved")) Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Green, modifier = Modifier.size(16.dp))
+                if (!processing && status.startsWith("Clip saved")) Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Green, modifier = Modifier.size(16.dp))
                 Text(status, color = if (status.startsWith("Clip saved")) Green else Muted, fontSize = 11.sp)
             }
-            if (exporting) {
-                androidx.compose.material3.LinearProgressIndicator(progress = { exportProgress }, modifier = Modifier.fillMaxWidth(), color = Accent)
+            if (processing) {
+                androidx.compose.material3.LinearProgressIndicator(progress = { processingProgress }, modifier = Modifier.fillMaxWidth(), color = Accent)
             }
             Text("Free on-device editing • No account • No paid API", color = Muted, fontSize = 10.sp)
         }
