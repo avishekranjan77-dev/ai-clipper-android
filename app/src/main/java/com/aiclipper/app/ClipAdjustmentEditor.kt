@@ -143,8 +143,13 @@ private fun renderAdjustedClip(context: Context, clip: GeneratedClip, zoom: Floa
     val source = clip.file
     if (!source.exists()) { onFailure("The original clip file is no longer available."); return }
     val duration = clip.durationMs.coerceAtLeast(1L)
-    val start = (duration * trimStart).toLong().coerceIn(0L, duration - 1L)
-    val end = (duration * trimEnd).toLong().coerceIn(start + 1L, duration)
+    var start = (duration * trimStart).toLong().coerceIn(0L, duration - 1L)
+    var end = (duration * trimEnd).toLong().coerceIn(start + 1L, duration)
+    val minimumDurationMs = 60_000L.coerceAtMost(duration)
+    if (end - start < minimumDurationMs) {
+        if (start + minimumDurationMs <= duration) end = start + minimumDurationMs
+        else start = (end - minimumDurationMs).coerceAtLeast(0L)
+    }
     val output = File(context.filesDir, "adjusted_clip_${System.currentTimeMillis()}.mp4")
     val clipping = MediaItem.ClippingConfiguration.Builder().setStartPositionMs(start).setEndPositionMs(end).build()
     val item = MediaItem.Builder().setUri(android.net.Uri.fromFile(source)).setClippingConfiguration(clipping).build()
