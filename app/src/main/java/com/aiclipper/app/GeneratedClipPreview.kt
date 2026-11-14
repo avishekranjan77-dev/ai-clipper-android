@@ -82,7 +82,7 @@ fun GeneratedClipReviewPanel(
             update = { it.player = player },
             modifier = Modifier.fillMaxWidth().height(250.dp).background(Color.Black, RoundedCornerShape(12.dp))
         )
-        Text("Previewing clip ${selectedIndex + 1} of ${clips.size}", color = Color.White, fontSize = 12.sp)
+        Text("Previewing clip ${selectedIndex + 1} of ${reviewClips.size}", color = Color.White, fontSize = 12.sp)
         if (editingIndex in reviewClips.indices) {
             ClipAdjustmentEditor(
                 clip = reviewClips[editingIndex],
