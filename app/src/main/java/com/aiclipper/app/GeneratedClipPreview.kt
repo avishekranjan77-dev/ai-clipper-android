@@ -1,9 +1,15 @@
 package com.aiclipper.app
 
+import android.Manifest
+import android.app.Activity
 import android.content.ContentValues
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.MediaStore
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
@@ -159,6 +165,10 @@ fun GeneratedClipReviewPanel(
                     Button(
                         onClick = {
                             if (busy) return@Button
+                            if (!ensureLegacyGalleryPermission(context)) {
+                                onError("Allow storage access for Gallery export, then tap Save again.")
+                                return@Button
+                            }
                             busy = true
                             scope.launch {
                                 try {
@@ -182,6 +192,10 @@ fun GeneratedClipReviewPanel(
         Button(
             onClick = {
                 if (busy) return@Button
+                if (!ensureLegacyGalleryPermission(context)) {
+                    onError("Allow storage access for Gallery export, then tap Download all again.")
+                    return@Button
+                }
                 busy = true
                 scope.launch {
                     try {
@@ -221,6 +235,17 @@ fun GeneratedClipReviewPanel(
         }
         if (savedCount > 0) Text("$savedCount clips saved to Gallery. You can still download the remaining previews.", color = Color(0xFF62D69A), fontSize = 11.sp)
     }
+}
+
+
+private fun ensureLegacyGalleryPermission(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT > 28) return true
+    if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) return true
+    var current = context
+    while (current !is Activity && current is ContextWrapper) current = current.baseContext
+    val activity = current as? Activity ?: return false
+    ActivityCompat.requestPermissions(activity, arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 7101)
+    return false
 }
 
 private fun saveGeneratedClip(context: Context, clip: GeneratedClip) {
