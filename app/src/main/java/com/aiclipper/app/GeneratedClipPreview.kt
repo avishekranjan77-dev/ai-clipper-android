@@ -57,6 +57,7 @@ fun GeneratedClipReviewPanel(
     context: Context,
     clips: List<GeneratedClip>,
     onSaved: (Int) -> Unit,
+    onClipsChanged: (List<GeneratedClip>) -> Unit,
     onError: (String) -> Unit
 ) {
     val player = remember { ExoPlayer.Builder(context).build() }
@@ -91,6 +92,7 @@ fun GeneratedClipReviewPanel(
                 onRendered = { replacement ->
                     val previous = reviewClips[editingIndex]
                     reviewClips = reviewClips.toMutableList().also { it[editingIndex] = replacement }
+                    onClipsChanged(reviewClips)
                     previous.file.delete()
                     selectedIndex = editingIndex
                     editingIndex = -1
@@ -119,6 +121,7 @@ fun GeneratedClipReviewPanel(
                             player.pause()
                             clip.file.delete()
                             reviewClips = reviewClips.filterNot { it.file == clip.file }
+                            onClipsChanged(reviewClips)
                             if (editingIndex == index) editingIndex = -1
                             else if (editingIndex > index) editingIndex--
                             selectedIndex = when {
@@ -143,6 +146,7 @@ fun GeneratedClipReviewPanel(
                                     withContext(Dispatchers.IO) { saveGeneratedClip(context, clip.file) }
                                     clip.file.delete()
                                     reviewClips = reviewClips.filterNot { it.file == clip.file }
+                                    onClipsChanged(reviewClips)
                                     selectedIndex = selectedIndex.coerceAtMost((reviewClips.size - 1).coerceAtLeast(0))
                                     savedCount++
                                     onSaved(1)
@@ -171,6 +175,7 @@ fun GeneratedClipReviewPanel(
                             }
                         }
                         reviewClips = reviewClips.filter { it.file.exists() }
+                        onClipsChanged(reviewClips)
                         selectedIndex = selectedIndex.coerceAtMost((reviewClips.size - 1).coerceAtLeast(0))
                         savedCount += count
                         onSaved(count)
