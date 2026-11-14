@@ -639,27 +639,25 @@ private fun analyseFaces(context: Context, uri: Uri, durationMs: Long): FaceScan
                     val faceCenters = faces.map { face ->
                         face.boundingBox.centerX().toFloat() / sample.width
                     }
-                    if (faces.size >= 2) {
-                        val pair = faces.sortedBy { it.boundingBox.centerX() }.take(2)
-                        layouts.add(FaceLayoutSample(
-                            time,
-                            pair.map { face ->
-                                val mouthLeft = face.getLandmark(FaceLandmark.MOUTH_LEFT)?.position
-                                val mouthRight = face.getLandmark(FaceLandmark.MOUTH_RIGHT)?.position
-                                val mouthBottom = face.getLandmark(FaceLandmark.MOUTH_BOTTOM)?.position
-                                val mouthOpen = if (mouthLeft != null && mouthRight != null && mouthBottom != null) {
-                                    (kotlin.math.abs(mouthBottom.y - (mouthLeft.y + mouthRight.y) / 2f) /
-                                        face.boundingBox.height().toFloat().coerceAtLeast(1f)).coerceIn(0f, 0.25f)
-                                } else 0f
-                                FaceCenter(
-                                    (face.boundingBox.centerX().toFloat() / sample.width).coerceIn(0.05f, 0.95f),
-                                    (face.boundingBox.centerY().toFloat() / sample.height).coerceIn(0.05f, 0.95f),
-                                    mouthOpen
-                                )
-                            },
-                            sample.width.toFloat() / sample.height.toFloat()
-                        ))
-                    }
+                    val visibleFaces = faces.sortedBy { it.boundingBox.centerX() }.take(2)
+                    layouts.add(FaceLayoutSample(
+                        time,
+                        visibleFaces.map { face ->
+                            val mouthLeft = face.getLandmark(FaceLandmark.MOUTH_LEFT)?.position
+                            val mouthRight = face.getLandmark(FaceLandmark.MOUTH_RIGHT)?.position
+                            val mouthBottom = face.getLandmark(FaceLandmark.MOUTH_BOTTOM)?.position
+                            val mouthOpen = if (mouthLeft != null && mouthRight != null && mouthBottom != null) {
+                                (kotlin.math.abs(mouthBottom.y - (mouthLeft.y + mouthRight.y) / 2f) /
+                                    face.boundingBox.height().toFloat().coerceAtLeast(1f)).coerceIn(0f, 0.25f)
+                            } else 0f
+                            FaceCenter(
+                                (face.boundingBox.centerX().toFloat() / sample.width).coerceIn(0.05f, 0.95f),
+                                (face.boundingBox.centerY().toFloat() / sample.height).coerceIn(0.05f, 0.95f),
+                                mouthOpen
+                            )
+                        },
+                        sample.width.toFloat() / sample.height.toFloat()
+                    ))
                     val selectedFace = faces.firstOrNull { it.trackingId == primaryFaceId }
                         ?: faces.minByOrNull { kotlin.math.abs(it.boundingBox.centerX().toFloat() / sample.width - previousCenterX) }
                         ?: faces.maxBy { it.boundingBox.width() * it.boundingBox.height() }
