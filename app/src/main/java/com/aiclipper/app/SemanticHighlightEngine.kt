@@ -77,6 +77,7 @@ object SemanticHighlightEngine {
                 throw IllegalStateException("AI model download failed (HTTP ${connection.responseCode})")
             }
             val total = connection.contentLengthLong
+            val progressTotal = total.takeIf { it > 0L } ?: EXPECTED_MODEL_BYTES
             if (total in 1 until MIN_MODEL_BYTES) {
                 throw IllegalStateException("The model server returned a file smaller than the expected model.")
             }
