@@ -11,8 +11,8 @@ An offline-first Android video clipping app built with Kotlin, Jetpack Compose a
 - Automatically reframe clips using face tracking and a two-person split-screen layout when two faces are present in that specific clip.
 - Export in 9:16, 1:1, 16:9 or the source video's original aspect ratio.
 - Burn in timed captions with Classic, Bold Pop, Word Focus/Karaoke and Minimal styles. Karaoke highlighting uses word-level timestamps.
-- Review actual rendered clips, search by AI title/reason, skip unwanted clips, and save clips individually or in bulk.
-- Adjust a rendered clip's framing, zoom, aspect ratio and trim points, then re-render it. The adjustment editor enforces a 60-second minimum.
+- Review actual rendered clips in a persistent on-device library that survives app restarts; search by AI title, reason or source video, skip unwanted clips, and save clips individually or in bulk.
+- Adjust a rendered clip's framing with drag/pinch gestures or sliders, change zoom/aspect ratio and trim points, then re-render it. The adjustment editor enforces a 60-second minimum.
 - Save finished MP4 files to Android Gallery under **Movies/AI Clipper** with descriptive filenames.
 
 ## AI and privacy
