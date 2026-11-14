@@ -74,12 +74,17 @@ object SemanticHighlightEngine {
                 FileOutputStream(partial).use { output ->
                     val buffer = ByteArray(128 * 1024)
                     var copied = 0L
+                    var lastProgressAt = 0L
                     while (true) {
                         val count = input.read(buffer)
                         if (count < 0) break
                         output.write(buffer, 0, count)
                         copied += count
-                        if (total > 0L) onProgress((copied.toFloat() / total).coerceIn(0f, 1f))
+                        val now = System.currentTimeMillis()
+                        if (total > 0L && (now - lastProgressAt >= 400L || copied == total)) {
+                            onProgress((copied.toFloat() / total).coerceIn(0f, 1f))
+                            lastProgressAt = now
+                        }
                     }
                     output.fd.sync()
                     if (copied < MIN_MODEL_BYTES || (total > 0L && copied != total)) {
