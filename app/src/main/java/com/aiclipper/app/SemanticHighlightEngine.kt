@@ -7,14 +7,17 @@ import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.collect
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
+import java.util.concurrent.Executors
 import kotlin.math.abs
 
 /** Free on-device transcript understanding. The text model is fused with separate visual/audio signals. */
@@ -36,7 +39,8 @@ object SemanticHighlightEngine {
     private const val MIN_CLIP_MS = 60_000L
     private const val MAX_CLIP_MS = 180_000L
     private const val WINDOW_MS = 180_000L
-    private const val STEP_MS = 60_000L
+    private const val STEP_MS = 120_000L
+    private const val INFERENCE_TIMEOUT_MS = 90_000L
 
     fun isModelInstalled(context: Context): Boolean {
         val file = File(context.filesDir, MODEL_FILE)
@@ -122,59 +126,82 @@ object SemanticHighlightEngine {
         speakerTurns: List<SpeakerTurn>,
         userPreference: String = "",
         maxClipDurationMs: Long = 90_000L,
-        onProgress: (Float) -> Unit = {}
-    ): List<SemanticHighlight> = withContext(Dispatchers.IO) {
-        require(isModelInstalled(context)) { "Download the free on-device AI highlight model first." }
-        require(captions.isNotEmpty()) { "Generate speech captions before semantic highlight analysis." }
-        require(durationMs >= MIN_CLIP_MS) { "The source video must be at least 60 seconds long." }
-        val clipMaximum = maxClipDurationMs.coerceIn(MIN_CLIP_MS, MAX_CLIP_MS)
-
-        val windows = buildWindows(captions, durationMs)
-        if (windows.isEmpty()) return@withContext emptyList()
-
-        val engine = Engine(
-            EngineConfig(
-                modelPath = modelFile(context).absolutePath,
-                backend = Backend.CPU(),
-                cacheDir = context.cacheDir.absolutePath
-            )
-        )
-        engine.initialize()
-        val candidates = mutableListOf<SemanticHighlight>()
-        val refinedCandidates: List<SemanticHighlight>
+        onProgress: (Float) -> Unit = {},
+        onStage: (String) -> Unit = {}
+    ): List<SemanticHighlight> {
+        val modelExecutor = Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "AIClipper-LiteRT-LM").apply { isDaemon = true }
+        }
+        val modelDispatcher = modelExecutor.asCoroutineDispatcher()
         try {
-            windows.forEachIndexed { index, window ->
-                val conversation = engine.createConversation(
-                    ConversationConfig(
-                        systemInstruction = Contents.of(
-                            "You are a precise video-editor highlight analyst. Understand the meaning, context, story arc, " +
-                                "humour, emotion, surprise, conflict, useful insight and completeness of spoken conversation. " +
-                                "Never invent dialogue or timestamps. Return only valid JSON."
-                        )
+            withContext(modelDispatcher) {
+                require(isModelInstalled(context)) { "The on-device AI model is missing or incomplete. Download it again from One-Time AI Setup." }
+                require(captions.isNotEmpty()) { "Generate speech captions before semantic highlight analysis." }
+                require(durationMs >= MIN_CLIP_MS) { "The source video must be at least 60 seconds long." }
+                val clipMaximum = maxClipDurationMs.coerceIn(MIN_CLIP_MS, MAX_CLIP_MS)
+                val windows = buildWindows(captions, durationMs)
+                if (windows.isEmpty()) return@withContext emptyList()
+
+                onStage("Loading the on-device AI model. The first load can take a little while…")
+                onProgress(0.02f)
+                val engine = Engine(
+                    EngineConfig(
+                        modelPath = modelFile(context).absolutePath,
+                        backend = Backend.CPU(),
+                        cacheDir = context.cacheDir.absolutePath
                     )
                 )
-                val response = try {
-                    conversation.sendMessage(buildPrompt(window, faceMoments, sceneMoments, audioEnergy, speakerTurns, userPreference, clipMaximum)).toString()
+                var engineInitialized = false
+                try {
+                    engine.initialize()
+                    engineInitialized = true
+                    onProgress(0.08f)
+                    val candidates = mutableListOf<SemanticHighlight>()
+                    windows.forEachIndexed { index, window ->
+                        onStage("Understanding conversation \${index + 1} of \${windows.size}…")
+                        val conversation = engine.createConversation(
+                            ConversationConfig(
+                                systemInstruction = Contents.of(
+                                    "You are a precise video-editor highlight analyst. Understand the meaning, context, story arc, " +
+                                        "humour, emotion, surprise, conflict, useful insight and completeness of spoken conversation. " +
+                                        "Do not reveal reasoning. Do not invent dialogue or timestamps. Return only valid JSON."
+                                )
+                            )
+                        )
+                        val response = try {
+                            withTimeout(INFERENCE_TIMEOUT_MS) {
+                                buildString {
+                                    conversation.sendMessageAsync(
+                                        buildPrompt(window, faceMoments, sceneMoments, audioEnergy, speakerTurns, userPreference, clipMaximum) +
+                                            "\n\n/no_think"
+                                    ).collect { message -> append(message.toString()) }
+                                }
+                            }
+                        } finally {
+                            conversation.close()
+                        }
+                        candidates.addAll(parseHighlights(response, window.startMs, window.endMs, captions, clipMaximum))
+                        onProgress(0.08f + ((index + 1f) / (windows.size + 1f)) * 0.76f)
+                    }
+                    onStage("Comparing and ranking the strongest moments…")
+                    onProgress(0.88f)
+                    val refinedCandidates = globallyRefine(engine, candidates)
+                    onProgress(1f)
+                    rankAndMerge(refinedCandidates, requestedCount, durationMs, faceMoments, sceneMoments, audioEnergy, speakerTurns)
                 } finally {
-                    conversation.close()
+                    if (engineInitialized) engine.close()
                 }
-                candidates.addAll(parseHighlights(response, window.startMs, window.endMs, captions, clipMaximum))
-                onProgress((index + 1f) / (windows.size + 1f))
             }
-            refinedCandidates = globallyRefine(engine, candidates)
-            onProgress(1f)
         } finally {
-            engine.close()
+            modelDispatcher.close()
+            modelExecutor.shutdown()
         }
-
-        rankAndMerge(refinedCandidates, requestedCount, durationMs, faceMoments, sceneMoments, audioEnergy, speakerTurns)
-    }
 
     /**
      * Second pass compares candidate summaries from every transcript window together.
      * This helps the model choose varied, high-value moments across the full source video.
      */
-    private fun globallyRefine(engine: Engine, candidates: List<SemanticHighlight>): List<SemanticHighlight> {
+    private suspend fun globallyRefine(engine: Engine, candidates: List<SemanticHighlight>): List<SemanticHighlight> {
         val pool = candidates.distinctBy { it.startMs }.sortedByDescending { it.score }.take(30)
         if (pool.size <= 1) return pool
         val options = pool.mapIndexed { index, item ->
@@ -189,12 +216,16 @@ object SemanticHighlightEngine {
             )
         )
         val response = try {
-            conversation.sendMessage(
-                "Compare these candidate moments from the complete source video. Select the strongest and most varied moments. " +
-                    "Do not select overlapping ranges or repeated versions of the same point. " +
-                    "Return up to ${pool.size} items in ranked order with original integer id and revised score 0-100. " +
-                    "Do not invent ids. JSON only: {\"ranked\":[{\"id\":0,\"score\":95}]}\n\nCANDIDATES:\n$options"
-            ).toString()
+            withTimeout(INFERENCE_TIMEOUT_MS) {
+                buildString {
+                    conversation.sendMessageAsync(
+                        "Compare these candidate moments from the complete source video. Select the strongest and most varied moments. " +
+                            "Do not select overlapping ranges or repeated versions of the same point. " +
+                            "Return up to \${pool.size} items in ranked order with original integer id and revised score 0-100. " +
+                            "Do not invent ids. JSON only: {\"ranked\":[{\"id\":0,\"score\":95}]}\n\nCANDIDATES:\n$options\n\n/no_think"
+                    ).collect { message -> append(message.toString()) }
+                }
+            }
         } finally {
             conversation.close()
         }
