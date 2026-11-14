@@ -473,7 +473,7 @@ private fun ClipperHome(context: Context) {
                                         }
                                         val speech = try {
                                             withContext(Dispatchers.IO) {
-                                                SpeechCaptionEngine.transcribe(context, uri) { value ->
+                                                SpeechCaptionEngine.transcribe(context, uri, durationMs) { value ->
                                                     scope.launch {
                                                         processingProgress = 0.15f + value * 0.18f
                                                         status = "Recognising speech and creating timed captions… ${(value * 100).toInt()}%"
@@ -539,7 +539,7 @@ private fun ClipperHome(context: Context) {
                                             }
                                         } else {
                                             status = "Ranking the strongest moments…"
-                                            processingProgress = 0.60f
+                                            processingProgress = 0.75f
                                         }
 
                                         val fallbackMoments = buildClipMoments(
