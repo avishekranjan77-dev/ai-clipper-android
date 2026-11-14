@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Tune
@@ -112,6 +113,26 @@ fun GeneratedClipReviewPanel(
                     Button(onClick = { selectedIndex = index; editingIndex = index; player.pause() }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF343044))) {
                         androidx.compose.material3.Icon(Icons.Default.Tune, contentDescription = "Adjust clip")
                         Text("Adjust")
+                    }
+                    Button(
+                        onClick = {
+                            player.pause()
+                            clip.file.delete()
+                            reviewClips = reviewClips.filterNot { it.file == clip.file }
+                            if (editingIndex == index) editingIndex = -1
+                            else if (editingIndex > index) editingIndex--
+                            selectedIndex = when {
+                                reviewClips.isEmpty() -> 0
+                                index < selectedIndex -> selectedIndex - 1
+                                index == selectedIndex -> selectedIndex.coerceAtMost(reviewClips.lastIndex)
+                                else -> selectedIndex
+                            }
+                        },
+                        enabled = !busy,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF343044))
+                    ) {
+                        androidx.compose.material3.Icon(Icons.Default.Close, contentDescription = "Skip clip")
+                        Text("Skip")
                     }
                     Button(
                         onClick = {
