@@ -119,6 +119,7 @@ private fun ClipperHome(context: Context) {
     var selectedVideoName by remember { mutableStateOf<String?>(null) }
     var videoLink by remember { mutableStateOf("") }
     var requestedClipCount by remember { mutableFloatStateOf(10f) }
+    var highlightFocus by remember { mutableStateOf("") }
     var durationMs by remember { mutableLongStateOf(0L) }
     var startMs by remember { mutableLongStateOf(0L) }
     var endMs by remember { mutableLongStateOf(0L) }
@@ -286,6 +287,18 @@ private fun ClipperHome(context: Context) {
                         onValueChange = { if (!processing) requestedClipCount = it },
                         valueRange = 1f..30f,
                         steps = 28
+                    )
+
+                    Text("OPTIONAL AI HIGHLIGHT FOCUS", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    BasicTextField(
+                        value = highlightFocus,
+                        onValueChange = { if (!processing) highlightFocus = it.take(400) },
+                        modifier = Modifier.fillMaxWidth().background(Color(0xFF22242C), RoundedCornerShape(10.dp)).padding(12.dp),
+                        textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 12.sp),
+                        decorationBox = { inner ->
+                            if (highlightFocus.isEmpty()) Text("e.g. funny moments, useful advice, intense reactions…", color = Muted, fontSize = 12.sp)
+                            inner()
+                        }
                     )
 
                     Text("OUTPUT FORMAT", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
@@ -457,7 +470,7 @@ private fun ClipperHome(context: Context) {
                                             try {
                                                 semanticHighlights = SemanticHighlightEngine.analyse(
                                                     context, speechCaptions, durationMs, requestedClipCount.toInt(),
-                                                    facePicks, scenePicks, audioEnergy, speakerTurns
+                                                    facePicks, scenePicks, audioEnergy, speakerTurns, highlightFocus
                                                 ) { value ->
                                                     scope.launch { processingProgress = 0.38f + value * 0.30f }
                                                 }
