@@ -149,6 +149,7 @@ object ClipIntelligence {
 
     /** Produce full-minute export ranges without overlap or out-of-bounds timestamps. */
     fun buildExportRanges(moments: List<Long>, durationMs: Long, clipDurationMs: Long = MIN_SHORT_DURATION_MS): List<ClipRange> {
+        if (durationMs < MIN_SHORT_DURATION_MS) return emptyList()
         val clipLength = clipDurationMs.coerceAtLeast(MIN_SHORT_DURATION_MS).coerceAtMost(durationMs)
         val latestStart = durationMs - clipLength
         val ranges = mutableListOf<ClipRange>()
