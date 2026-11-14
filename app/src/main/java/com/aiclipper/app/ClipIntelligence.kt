@@ -20,8 +20,7 @@ object ClipIntelligence {
         clipDurationMs: Long = MIN_SHORT_DURATION_MS
     ): List<Long> {
         if (durationMs < MIN_SHORT_DURATION_MS || requestedCount <= 0) return emptyList()
-        val clipLength = clipDurationMs.coerceAtLeast(MIN_SHORT_DURATION_MS)
-        if (durationMs < clipLength) return emptyList()
+        val clipLength = clipDurationMs.coerceAtLeast(MIN_SHORT_DURATION_MS).coerceAtMost(durationMs)
         val maxByDuration = (durationMs / MIN_SHORT_DURATION_MS).toInt().coerceAtLeast(1)
         val target = requestedCount.coerceIn(1, 30).coerceAtMost(maxByDuration)
         val latestMoment = (durationMs - (MIN_SHORT_DURATION_MS - LEAD_IN_MS)).coerceAtLeast(0L)
@@ -125,7 +124,7 @@ object ClipIntelligence {
         clipDurationMs: Long = 90_000L
     ): List<ClipRange> {
         if (durationMs < MIN_SHORT_DURATION_MS || requestedCount <= 0) return emptyList()
-        val clipLength = clipDurationMs.coerceAtLeast(MIN_SHORT_DURATION_MS)
+        val clipLength = clipDurationMs.coerceAtLeast(MIN_SHORT_DURATION_MS).coerceAtMost(durationMs)
         val availableSlots = (durationMs / MIN_SHORT_DURATION_MS).toInt().coerceAtLeast(1)
         val target = requestedCount.coerceIn(1, 30).coerceAtMost(availableSlots)
         val chosen = mutableListOf<ClipRange>()
@@ -150,8 +149,7 @@ object ClipIntelligence {
 
     /** Produce full-minute export ranges without overlap or out-of-bounds timestamps. */
     fun buildExportRanges(moments: List<Long>, durationMs: Long, clipDurationMs: Long = MIN_SHORT_DURATION_MS): List<ClipRange> {
-        val clipLength = clipDurationMs.coerceAtLeast(MIN_SHORT_DURATION_MS)
-        if (durationMs < clipLength) return emptyList()
+        val clipLength = clipDurationMs.coerceAtLeast(MIN_SHORT_DURATION_MS).coerceAtMost(durationMs)
         val latestStart = durationMs - clipLength
         val ranges = mutableListOf<ClipRange>()
         moments.distinct().sorted().forEach { moment ->
