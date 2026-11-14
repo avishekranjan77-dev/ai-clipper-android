@@ -120,6 +120,7 @@ object SemanticHighlightEngine {
         sceneMoments: List<Long>,
         audioEnergy: List<AudioEnergyPoint>,
         speakerTurns: List<SpeakerTurn>,
+        userPreference: String = "",
         onProgress: (Float) -> Unit = {}
     ): List<SemanticHighlight> = withContext(Dispatchers.IO) {
         require(isModelInstalled(context)) { "Download the free on-device AI highlight model first." }
@@ -151,7 +152,7 @@ object SemanticHighlightEngine {
                     )
                 )
                 val response = try {
-                    conversation.sendMessage(buildPrompt(window, faceMoments, sceneMoments, audioEnergy, speakerTurns)).toString()
+                    conversation.sendMessage(buildPrompt(window, faceMoments, sceneMoments, audioEnergy, speakerTurns, userPreference)).toString()
                 } finally {
                     conversation.close()
                 }
@@ -233,7 +234,8 @@ object SemanticHighlightEngine {
         faces: List<Long>,
         scenes: List<Long>,
         energy: List<AudioEnergyPoint>,
-        speakers: List<SpeakerTurn>
+        speakers: List<SpeakerTurn>,
+        userPreference: String
     ): String {
         val transcript = window.cues.joinToString("\n") {
             "[${it.startMs}-${it.endMs}] ${it.text.replace("\n", " ").take(180)}"
@@ -247,7 +249,9 @@ object SemanticHighlightEngine {
             "average %.3f, peak %.3f".format(Locale.US, energyValues.average(), energyValues.maxOrNull() ?: 0f)
 
         return """
-            Analyse this transcript as an editor making engaging vertical short videos.
+            Analyse this transcript as an editor making engaging short videos.
+            USER'S REQUESTED FOCUS: ${userPreference.trim().take(400).ifBlank { "No extra preference; choose the strongest complete moments." }}
+            Prioritize the requested focus when it is supported by the transcript, but never invent moments or ignore context.
             Available absolute timeline: ${window.startMs} to ${window.endMs} milliseconds.
             Video evidence summary: $faceCount face-detection samples, $sceneCount scene changes,
             $speakerCount distinct diarized speakers, audio RMS $energySummary.
