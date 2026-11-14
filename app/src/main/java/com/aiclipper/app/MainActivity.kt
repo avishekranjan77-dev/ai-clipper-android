@@ -122,6 +122,8 @@ private fun ClipperHome(context: Context) {
     var portrait by remember { mutableStateOf(true) }
     var captionText by remember { mutableStateOf("") }
     var speechCaptions by remember { mutableStateOf<List<CaptionCue>>(emptyList()) }
+    var speakerTurns by remember { mutableStateOf<List<SpeakerTurn>>(emptyList()) }
+    var speakerModelReady by remember { mutableStateOf(SpeechCaptionEngine.isSpeakerModelInstalled(context)) }
     var audioEnergy by remember { mutableStateOf<List<AudioEnergyPoint>>(emptyList()) }
     var speechModelReady by remember { mutableStateOf(SpeechCaptionEngine.isModelInstalled(context)) }
     var speechBusy by remember { mutableStateOf(false) }
@@ -168,6 +170,7 @@ private fun ClipperHome(context: Context) {
         selectedVideo = uri
         hasAnalysedVideo = false
         speechCaptions = emptyList()
+        speakerTurns = emptyList()
         audioEnergy = emptyList()
         faceTrack = emptyList()
         faceLayouts = emptyList()
@@ -224,6 +227,7 @@ private fun ClipperHome(context: Context) {
                                     selectedVideo = Uri.fromFile(localFile)
                                     selectedVideoName = localFile.name
                                     speechCaptions = emptyList()
+                                    speakerTurns = emptyList()
                                     audioEnergy = emptyList()
                                     hasAnalysedVideo = false
                                     faceTrack = emptyList()
@@ -453,13 +457,21 @@ private fun ClipperHome(context: Context) {
                                     if (!speechModelReady) {
                                         withContext(Dispatchers.IO) { SpeechCaptionEngine.downloadModel(context) {} }
                                         speechModelReady = true
-                                        status = "English model installed. Tap Generate captions again."
+                                        status = "English speech model installed. Tap again to install speaker recognition."
+                                    } else if (!speakerModelReady) {
+                                        withContext(Dispatchers.IO) { SpeechCaptionEngine.downloadSpeakerModel(context) {} }
+                                        speakerModelReady = true
+                                        status = "Offline speaker-recognition model installed. Tap again to analyse speech and speakers."
                                     } else {
                                         val analysis = withContext(Dispatchers.IO) { SpeechCaptionEngine.transcribe(context, uri) {} }
                                         speechCaptions = analysis.captions
                                         audioEnergy = analysis.audioEnergy
+                                        speakerTurns = analysis.speakerTurns
+                                        val speakers = analysis.speakerTurns.map { it.speakerId }.distinct().size
                                         status = when {
-                                            analysis.captions.isNotEmpty() -> "Generated ${analysis.captions.size} timed caption lines and analysed audio activity."
+                                            analysis.captions.isNotEmpty() && speakers > 1 -> "Generated timed captions and identified $speakers distinct voices across ${analysis.speakerTurns.size} speech turns."
+                                            analysis.captions.isNotEmpty() && speakers == 1 -> "Generated timed captions. One distinct voice was identified."
+                                            analysis.captions.isNotEmpty() -> "Generated timed captions and audio activity. Speaker turns were not confidently identified."
                                             analysis.audioEnergy.isNotEmpty() -> "No clear speech detected; audio activity analysis is ready."
                                             else -> "No clear speech or usable audio activity detected."
                                         }
@@ -478,7 +490,11 @@ private fun ClipperHome(context: Context) {
                         if (speechBusy) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                         else Icon(Icons.Default.AutoAwesome, contentDescription = null)
                         Spacer(Modifier.size(6.dp))
-                        Text(if (speechBusy) "Working…" else if (speechModelReady) "Generate timed captions" else "Download English model")
+                        Text(if (speechBusy) "Working…" else if (!speechModelReady) "Download English model" else if (!speakerModelReady) "Download speaker AI model" else "Generate captions + identify speakers")
+                    }
+                    if (speakerTurns.isNotEmpty()) {
+                        val detectedSpeakers = speakerTurns.map { it.speakerId }.distinct().sorted()
+                        Text("Voice diarization: " + detectedSpeakers.joinToString(" • ") { "Speaker $it" } + "  |  " + speakerTurns.size + " turns", color = Green, fontSize = 11.sp)
                     }
                     Text(
                         if (speechCaptions.isNotEmpty()) "Timed captions ready: " + speechCaptions.size + " lines • audio activity analysed"
