@@ -119,6 +119,7 @@ private fun ClipperHome(context: Context) {
     var selectedVideoName by remember { mutableStateOf<String?>(null) }
     var videoLink by remember { mutableStateOf("") }
     var requestedClipCount by remember { mutableFloatStateOf(10f) }
+    var maxClipDurationSeconds by remember { mutableFloatStateOf(90f) }
     var highlightFocus by remember { mutableStateOf("") }
     var durationMs by remember { mutableLongStateOf(0L) }
     var startMs by remember { mutableLongStateOf(0L) }
@@ -291,7 +292,7 @@ private fun ClipperHome(context: Context) {
 
                 Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("CREATE YOUR SHORTS", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Text("Choose your settings once. Everything else runs automatically in the background.", color = Muted, fontSize = 11.sp)
+                    Text("Choose your settings once. AI handles the rest automatically; keep the app open while it works.", color = Muted, fontSize = 11.sp)
 
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                         Text("NUMBER OF CLIPS", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
@@ -303,6 +304,18 @@ private fun ClipperHome(context: Context) {
                         valueRange = 1f..30f,
                         steps = 28
                     )
+
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                        Text("MAXIMUM CLIP LENGTH", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        Text(clipDurationLabel(maxClipDurationSeconds.toInt()), color = Accent, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                    Slider(
+                        value = maxClipDurationSeconds,
+                        onValueChange = { if (!processing) maxClipDurationSeconds = it },
+                        valueRange = 60f..180f,
+                        steps = 3
+                    )
+                    Text("Clips remain at least 60 seconds long. The AI selects meaningful moments up to this limit.", color = Muted, fontSize = 10.sp)
 
                     Text("OPTIONAL AI HIGHLIGHT FOCUS", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                     BasicTextField(
@@ -485,7 +498,8 @@ private fun ClipperHome(context: Context) {
                                             try {
                                                 semanticHighlights = SemanticHighlightEngine.analyse(
                                                     context, speechCaptions, durationMs, requestedClipCount.toInt(),
-                                                    facePicks, scenePicks, audioEnergy, speakerTurns, highlightFocus
+                                                    facePicks, scenePicks, audioEnergy, speakerTurns, highlightFocus,
+                                                    maxClipDurationMs = maxClipDurationSeconds.toLong() * 1000L
                                                 ) { value ->
                                                     scope.launch { processingProgress = 0.38f + value * 0.30f }
                                                 }
@@ -504,13 +518,15 @@ private fun ClipperHome(context: Context) {
 
                                         val fallbackMoments = buildClipMoments(
                                             facePicks, scenePicks, speechCaptions, audioEnergy,
-                                            durationMs, requestedClipCount.toInt()
+                                            durationMs, requestedClipCount.toInt(),
+                                            maxClipDurationSeconds.toLong() * 1000L
                                         )
                                         val usableRanges = ClipIntelligence.mergeExportRanges(
                                             preferredRanges = ranges,
                                             fallbackMoments = fallbackMoments,
                                             durationMs = durationMs,
-                                            requestedCount = requestedClipCount.toInt()
+                                            requestedCount = requestedClipCount.toInt(),
+                                            clipDurationMs = maxClipDurationSeconds.toLong() * 1000L
                                         )
                                         val moments = usableRanges.map { it.startMs + 20_000L }
 
@@ -617,10 +633,19 @@ private fun buildClipMoments(
     speechCaptions: List<CaptionCue>,
     audioEnergy: List<AudioEnergyPoint>,
     durationMs: Long,
-    requestedCount: Int
+    requestedCount: Int,
+    clipDurationMs: Long = ClipIntelligence.MIN_SHORT_DURATION_MS
 ): List<Long> = ClipIntelligence.selectMoments(
-    faceMoments, sceneMoments, speechCaptions, audioEnergy, durationMs, requestedCount
+    faceMoments, sceneMoments, speechCaptions, audioEnergy, durationMs, requestedCount, clipDurationMs
 )
+
+private fun clipDurationLabel(seconds: Int): String = when (seconds) {
+    60 -> "1 min"
+    90 -> "1 min 30 sec"
+    120 -> "2 min"
+    150 -> "2 min 30 sec"
+    else -> "3 min"
+}
 
 private fun Player.isReadyForDuration(): Boolean = playbackState == Player.STATE_READY && duration > 0
 
