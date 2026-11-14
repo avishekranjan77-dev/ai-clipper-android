@@ -380,6 +380,19 @@ private fun ClipperHome(context: Context) {
                         color = if (durationMs < MIN_SHORT_DURATION_MS) Color(0xFFFFB86B) else Muted,
                         fontSize = 10.sp
                     )
+                    Text("CAPTION STYLE", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        CaptionStyle.values().forEach { style ->
+                            Button(onClick = { captionStyle = style }, modifier = Modifier.weight(1f),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 3.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = if (captionStyle == style) Accent else Color(0xFF292B34))) {
+                                Text(style.label, fontSize = 9.sp, maxLines = 1)
+                            }
+                        }
+                    }
+                    Text("Captions shift to the upper or lower safe area when a detected face is nearby.", color = Muted, fontSize = 10.sp)
+                    Spacer(Modifier.height(10.dp))
                     val availableMoments = remember(facePicks, scenePicks, speechCaptions, audioEnergy, durationMs, requestedClipCount.toInt(), hasAnalysedVideo) { if (hasAnalysedVideo) buildClipMoments(facePicks, scenePicks, speechCaptions, audioEnergy, durationMs, requestedClipCount.toInt()) else emptyList() }
                     if (availableMoments.isNotEmpty()) {
                         Button(
@@ -449,19 +462,6 @@ private fun ClipperHome(context: Context) {
                     )
                 }
                 Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(16.dp)) {
-                    Text("CAPTION STYLE", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        CaptionStyle.values().forEach { style ->
-                            Button(onClick = { captionStyle = style }, modifier = Modifier.weight(1f),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 3.dp, vertical = 8.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = if (captionStyle == style) Accent else Color(0xFF292B34))) {
-                                Text(style.label, fontSize = 9.sp, maxLines = 1)
-                            }
-                        }
-                    }
-                    Text("Captions shift to the upper or lower safe area when a detected face is nearby.", color = Muted, fontSize = 10.sp)
-                    Spacer(Modifier.height(10.dp))
                     Text("CAPTION OVERLAY", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     Spacer(Modifier.height(8.dp))
                     BasicTextField(
