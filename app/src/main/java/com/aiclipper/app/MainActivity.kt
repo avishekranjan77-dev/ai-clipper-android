@@ -392,8 +392,12 @@ private fun ClipperHome(context: Context) {
                                     try {
                                         if (!speechModelReady) {
                                             status = "Installing offline speech recognition…"
-                                            withContext(Dispatchers.IO) { SpeechCaptionEngine.downloadModel(context) {} }
-                                            speechModelReady = true
+                                            try {
+                                                withContext(Dispatchers.IO) { SpeechCaptionEngine.downloadModel(context) {} }
+                                                speechModelReady = true
+                                            } catch (_: Exception) {
+                                                speechModelReady = false
+                                            }
                                         }
                                         var speakerRecognitionAvailable = speakerModelReady
                                         if (!speakerModelReady) {
@@ -409,12 +413,17 @@ private fun ClipperHome(context: Context) {
                                         }
 
                                         status = if (speakerRecognitionAvailable) "Transcribing speech and analysing audio…" else "Transcribing speech (speaker model unavailable; face tracking remains enabled)…"
-                                        val speech = try {
-                                            withContext(Dispatchers.IO) {
-                                                SpeechCaptionEngine.transcribe(context, uri) {}
+                                        val speech = if (speechModelReady) {
+                                            try {
+                                                withContext(Dispatchers.IO) {
+                                                    SpeechCaptionEngine.transcribe(context, uri) {}
+                                                }
+                                            } catch (_: Exception) {
+                                                status = "Speech analysis unavailable; continuing with visual scene and face analysis…"
+                                                SpeechAnalysisResult(emptyList(), emptyList(), emptyList())
                                             }
-                                        } catch (speechError: Exception) {
-                                            status = "Speech analysis unavailable; continuing with visual scene and face analysis…"
+                                        } else {
+                                            status = "Speech model unavailable; continuing with visual scene and face analysis…"
                                             SpeechAnalysisResult(emptyList(), emptyList(), emptyList())
                                         }
                                         speechCaptions = speech.captions
