@@ -91,6 +91,23 @@ class ClipIntelligenceTest {
     }
 
 
+    @Test fun fastFirstClipModeProducesOneRangeWithoutAnyModelSignals() {
+        val durationMs = 22L * 60L * 1000L
+        val moments = ClipIntelligence.selectMoments(
+            faceMoments = emptyList(),
+            sceneMoments = emptyList(),
+            speechCaptions = emptyList(),
+            audioEnergy = emptyList(),
+            durationMs = durationMs,
+            requestedCount = 1,
+            clipDurationMs = 90_000L
+        )
+        val ranges = ClipIntelligence.buildExportRanges(moments, durationMs, 90_000L)
+        assertEquals(1, ranges.size)
+        assertEquals(90_000L, ranges.single().durationMs)
+        assertTrue(ranges.single().startMs >= 0L && ranges.single().endMs <= durationMs)
+    }
+
     @Test fun selectedMaximumLongerThanSourceStillProducesOneValidShort() {
         val moments = ClipIntelligence.selectMoments(
             faceMoments = emptyList(),
