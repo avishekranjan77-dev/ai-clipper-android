@@ -43,7 +43,7 @@ class ClipIntelligenceTest {
     @Test fun semanticSelectionsAreFilledWithNonOverlappingFallbackRanges() {
         val merged = ClipIntelligence.mergeExportRanges(
             preferredRanges = listOf(ClipRange(0L, 90_000L)),
-            fallbackMoments = listOf(20_000L, 100_000L, 180_000L, 250_000L, 300_000L),
+            fallbackMoments = listOf(20_000L, 100_000L, 180_000L, 250_000L, 300_000L, 350_000L),
             durationMs = 360_000L,
             requestedCount = 4
         )
