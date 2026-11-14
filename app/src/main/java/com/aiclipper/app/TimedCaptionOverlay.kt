@@ -38,6 +38,7 @@ internal class TimedCaptionOverlay(
     override fun onDraw(canvas: Canvas, presentationTimeUs: Long) {
         val timeMs = presentationTimeUs / 1000L
         val cue = cues.firstOrNull { timeMs >= it.startMs && timeMs < it.endMs } ?: return
+        val activeWordIndex = cue.words.indexOfFirst { timeMs >= it.startMs && timeMs < it.endMs }
         val absoluteMs = clipStartMs + timeMs
         val nearest = faceSamples.minByOrNull { kotlin.math.abs(it.timeMs - absoluteMs) }?.takeIf { kotlin.math.abs(it.timeMs - absoluteMs) <= 2500L }
         val faceOccupiesLowerCaptionZone = nearest?.faces?.any { it.y in 0.58f..0.96f && it.x in 0.18f..0.82f } == true
@@ -73,21 +74,27 @@ internal class TimedCaptionOverlay(
             }
             canvas.drawRoundRect(rect, if (style == CaptionStyle.BOLD_POP) 28f else 18f, if (style == CaptionStyle.BOLD_POP) 28f else 18f, backgroundPaint)
         }
+        var wordOffset = 0
         lines.forEachIndexed { index, value ->
             val baseline = rect.top + verticalPadding + textPaint.textSize * 0.88f + index * lineHeight
             if (style == CaptionStyle.KARAOKE) {
                 val parts = value.split(" ")
-                val active = parts.lastIndex
+                val localActive = when {
+                    activeWordIndex < 0 -> parts.lastIndex
+                    activeWordIndex in wordOffset until (wordOffset + parts.size) -> activeWordIndex - wordOffset
+                    else -> -1
+                }
                 val full = parts.joinToString(" ")
                 canvas.drawText(full, canvas.width / 2f, baseline, textPaint)
-                if (active >= 0) {
-                    val prefix = parts.dropLast(1).joinToString(" ")
-                    val activeWord = parts.last()
+                if (localActive in parts.indices) {
+                    val prefix = parts.take(localActive).joinToString(" ")
+                    val activeWord = parts[localActive]
                     val prefixWidth = if (prefix.isEmpty()) 0f else textPaint.measureText("$prefix ")
                     val wordWidth = accentPaint.measureText(activeWord)
                     val startX = canvas.width / 2f - textPaint.measureText(full) / 2f + prefixWidth
                     canvas.drawText(activeWord, startX + wordWidth / 2f, baseline, accentPaint)
                 }
+                wordOffset += parts.size
             } else {
                 if (style == CaptionStyle.BOLD_POP) {
                     textPaint.setShadowLayer(5f, 2f, 3f, android.graphics.Color.BLACK)
