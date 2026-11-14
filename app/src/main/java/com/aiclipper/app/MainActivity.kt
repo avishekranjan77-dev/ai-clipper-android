@@ -180,20 +180,27 @@ private fun ClipperHome(context: Context) {
     val videoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        selectedVideo = uri
-        generatedClips.forEach { it.file.delete() }
-        generatedClips = emptyList()
-        semanticHighlights = emptyList()
-        hasAnalysedVideo = false
-        speechCaptions = emptyList()
-        speakerTurns = emptyList()
-        audioEnergy = emptyList()
-        faceTrack = emptyList()
-        faceLayouts = emptyList()
-        facePicks = emptyList()
-        scenePicks = emptyList()
-        selectedVideoName = uri?.let { queryDisplayName(context, it) }
-        status = if (uri == null) "No video selected" else "Video loaded. Choose your settings and create AI clips."
+        if (uri == null) {
+            status = "No new video selected. Your current project is unchanged."
+        } else {
+            durationMs = 0L
+            startMs = 0L
+            endMs = 0L
+            selectedVideo = uri
+            generatedClips.forEach { it.file.delete() }
+            generatedClips = emptyList()
+            semanticHighlights = emptyList()
+            hasAnalysedVideo = false
+            speechCaptions = emptyList()
+            speakerTurns = emptyList()
+            audioEnergy = emptyList()
+            faceTrack = emptyList()
+            faceLayouts = emptyList()
+            facePicks = emptyList()
+            scenePicks = emptyList()
+            selectedVideoName = queryDisplayName(context, uri)
+            status = "Video loaded. Choose your settings and create AI clips."
+        }
     }
 
     Surface(modifier = Modifier.fillMaxSize(), color = AppBackground) {
