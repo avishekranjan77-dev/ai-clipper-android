@@ -184,20 +184,28 @@ fun GeneratedClipReviewPanel(
                 if (busy) return@Button
                 busy = true
                 scope.launch {
-                    var count = 0
                     try {
-                        withContext(Dispatchers.IO) {
+                        val result = withContext(Dispatchers.IO) {
+                            val savedPaths = mutableSetOf<String>()
+                            var firstError: String? = null
                             reviewClips.filter { it.file.exists() }.forEach { clip ->
-                                saveGeneratedClip(context, clip)
-                                clip.file.delete()
-                                count++
+                                try {
+                                    saveGeneratedClip(context, clip)
+                                    clip.file.delete()
+                                    savedPaths.add(clip.file.absolutePath)
+                                } catch (error: Exception) {
+                                    if (firstError == null) firstError = error.localizedMessage ?: "Gallery could not save one clip"
+                                }
                             }
+                            savedPaths to firstError
                         }
-                        reviewClips = reviewClips.filter { it.file.exists() }
+                        val count = result.first.size
+                        reviewClips = reviewClips.filterNot { it.file.absolutePath in result.first }
                         onClipsChanged(reviewClips)
                         selectedIndex = selectedIndex.coerceAtMost((reviewClips.size - 1).coerceAtLeast(0))
                         savedCount += count
-                        onSaved(count)
+                        if (result.second != null) onError("Saved $count clips. Some remaining clips could not be saved: ${result.second}")
+                        else onSaved(count)
                     } catch (error: Exception) { onError(error.localizedMessage ?: "Some clips could not be saved") }
                     finally { busy = false }
                 }
