@@ -77,7 +77,7 @@ fun GeneratedClipReviewPanel(
     var editingIndex by remember { mutableIntStateOf(-1) }
     var searchQuery by remember { mutableStateOf("") }
     val visibleClips = reviewClips.mapIndexed { index, clip -> index to clip }.filter { (_, clip) ->
-        searchQuery.isBlank() || clip.title.contains(searchQuery, ignoreCase = true) || clip.reason.contains(searchQuery, ignoreCase = true)
+        searchQuery.isBlank() || clip.title.contains(searchQuery, ignoreCase = true) || clip.reason.contains(searchQuery, ignoreCase = true) || clip.sourceName.contains(searchQuery, ignoreCase = true)
     }
     val scope = rememberCoroutineScope()
 
@@ -105,7 +105,7 @@ fun GeneratedClipReviewPanel(
             textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 12.sp),
             singleLine = true,
             decorationBox = { inner ->
-                if (searchQuery.isEmpty()) Text("Find clips by AI title or reason…", color = Color(0xFF9295A1), fontSize = 12.sp)
+                if (searchQuery.isEmpty()) Text("Find clips by title, source video or reason…", color = Color(0xFF9295A1), fontSize = 12.sp)
                 inner()
             }
         )
