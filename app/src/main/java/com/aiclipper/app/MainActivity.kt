@@ -122,7 +122,7 @@ private fun ClipperHome(context: Context) {
     var durationMs by remember { mutableLongStateOf(0L) }
     var startMs by remember { mutableLongStateOf(0L) }
     var endMs by remember { mutableLongStateOf(0L) }
-    var portrait by remember { mutableStateOf(true) }
+    var outputAspect by remember { mutableStateOf("9:16") }
     var captionText by remember { mutableStateOf("") }
     var speechCaptions by remember { mutableStateOf<List<CaptionCue>>(emptyList()) }
     var speakerTurns by remember { mutableStateOf<List<SpeakerTurn>>(emptyList()) }
@@ -284,19 +284,16 @@ private fun ClipperHome(context: Context) {
                     )
 
                     Text("OUTPUT FORMAT", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        Button(
-                            onClick = { if (!processing) portrait = true },
-                            enabled = !processing,
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(containerColor = if (portrait) Accent else Color(0xFF292B34))
-                        ) { Text("9:16 Vertical") }
-                        Button(
-                            onClick = { if (!processing) portrait = false },
-                            enabled = !processing,
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(containerColor = if (!portrait) Accent else Color(0xFF292B34))
-                        ) { Text("Original") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth()) {
+                        listOf("9:16", "1:1", "16:9", "Original").forEach { aspect ->
+                            Button(
+                                onClick = { if (!processing) outputAspect = aspect },
+                                enabled = !processing,
+                                modifier = Modifier.weight(1f),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 2.dp, vertical = 8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = if (outputAspect == aspect) Accent else Color(0xFF292B34))
+                            ) { Text(aspect, fontSize = 10.sp, maxLines = 1) }
+                        }
                     }
 
                     Text("CAPTION STYLE", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
@@ -463,7 +460,7 @@ private fun ClipperHome(context: Context) {
                                         exportSuggestedClips(
                                             context, uri, moments, durationMs, faceTrack, faceLayouts,
                                             twoPersonSplitScreen, speakerTurns, captionText, speechCaptions,
-                                            captionStyle, usableRanges,
+                                            captionStyle, usableRanges, outputAspect,
                                             onProgress = { value ->
                                                 scope.launch {
                                                     processingProgress = 0.70f + value * 0.30f
@@ -764,7 +761,12 @@ private suspend fun exportVideo(
             val videoEffects = mutableListOf<androidx.media3.common.Effect>()
             if (portrait) {
                 if (faceTrack.isNotEmpty()) videoEffects.add(createFaceTrackingEffect(faceTrack, startMs))
-                videoEffects.add(Presentation.createForWidthAndHeight(1080, 1920, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+                when (outputAspect) {
+            "9:16" -> videoEffects.add(Presentation.createForWidthAndHeight(1080, 1920, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+            "1:1" -> videoEffects.add(Presentation.createForWidthAndHeight(1080, 1080, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+            "16:9" -> videoEffects.add(Presentation.createForWidthAndHeight(1920, 1080, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+            // Original keeps the source video's dimensions and aspect ratio.
+        }
             }
             val clipCues = speechCaptions.filter { it.endMs > startMs && it.startMs < endMs }.map {
                 CaptionCue((it.startMs - startMs).coerceAtLeast(0L), (it.endMs - startMs).coerceAtMost(endMs - startMs), it.text)
@@ -816,6 +818,7 @@ private suspend fun exportSuggestedClips(
     speechCaptions: List<CaptionCue>,
     captionStyle: CaptionStyle,
     preferredRanges: List<ClipRange>,
+    outputAspect: String,
     onProgress: (Float) -> Unit,
     onComplete: (List<GeneratedClip>) -> Unit,
     onError: (String) -> Unit
@@ -864,7 +867,7 @@ private suspend fun exportSuggestedClips(
         val transformer = Transformer.Builder(context).addListener(object : Transformer.Listener {
             override fun onCompleted(composition: androidx.media3.transformer.Composition, exportResult: ExportResult) {
                 try {
-                    generated.add(GeneratedClip(output, startMs, endMs))
+                    generated.add(GeneratedClip(output, startMs, endMs, outputAspect))
                     index++
                     onProgress(index.toFloat() / clips.size)
                     exportNext()
