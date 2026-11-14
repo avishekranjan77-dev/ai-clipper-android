@@ -160,8 +160,8 @@ object SpeechCaptionEngine {
                                 var sum = 0
                                 repeat(channels) { sum += pcm.short.toInt() }
                                 val mono = (sum / channels).coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
-                                phase += TARGET_RATE
-                                if (phase >= sampleRate) {
+                                phase += TARGET_RATE.toLong()
+                                if (phase >= sampleRate.toLong()) {
                                     phase -= sampleRate.toLong()
                                     mono16k.write(mono and 0xff)
                                     mono16k.write((mono shr 8) and 0xff)
