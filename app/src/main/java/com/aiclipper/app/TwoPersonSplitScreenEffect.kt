@@ -18,7 +18,7 @@ import kotlin.math.roundToInt
  * The source frame is sampled twice, once around each participant, for every output frame.
  */
 @UnstableApi
-class TwoPersonSplitScreenEffect(
+internal class TwoPersonSplitScreenEffect(
     private val samples: List<FaceLayoutSample>
 ) : GlEffect {
     override fun toGlShaderProgram(context: Context, useHdr: Boolean) =
