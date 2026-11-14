@@ -5,6 +5,7 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
+import android.os.StatFs
 import org.json.JSONObject
 import org.vosk.Model
 import org.vosk.Recognizer
@@ -109,6 +110,10 @@ object SpeechCaptionEngine {
         val target = File(root, MODEL_NAME)
         if (isModelInstalled(context)) return target
 
+        val availableBytes = StatFs(root.absolutePath).availableBytes
+        if (availableBytes < MODEL_EXPECTED_BYTES + 100L * 1024L * 1024L) {
+            throw IllegalStateException("Not enough free storage to install speech recognition. Free at least 150 MB and retry.")
+        }
         val archive = File(context.cacheDir, "$MODEL_NAME.zip.part")
         val staging = File(root, "$MODEL_NAME.installing")
         archive.delete()
