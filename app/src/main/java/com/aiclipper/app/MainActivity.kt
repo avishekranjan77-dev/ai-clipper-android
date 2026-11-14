@@ -120,7 +120,7 @@ private fun ClipperHome(context: Context) {
     var selectedVideo by remember { mutableStateOf<Uri?>(null) }
     var selectedVideoName by remember { mutableStateOf<String?>(null) }
     var videoLink by remember { mutableStateOf("") }
-    var requestedClipCount by remember { mutableFloatStateOf(10f) }
+    var requestedClipCount by remember { mutableFloatStateOf(1f) }
     var maxClipDurationSeconds by remember { mutableFloatStateOf(90f) }
     var highlightFocus by remember { mutableStateOf("") }
     var durationMs by remember { mutableLongStateOf(0L) }
@@ -133,6 +133,7 @@ private fun ClipperHome(context: Context) {
     var speakerModelReady by remember { mutableStateOf(SpeechCaptionEngine.isSpeakerModelInstalled(context)) }
     var audioEnergy by remember { mutableStateOf<List<AudioEnergyPoint>>(emptyList()) }
     var speechModelReady by remember { mutableStateOf(SpeechCaptionEngine.isModelInstalled(context)) }
+    var enableSpeechCaptions by remember { mutableStateOf(false) }
     var processing by remember { mutableStateOf(false) }
     var importingLink by remember { mutableStateOf(false) }
     var processingProgress by remember { mutableFloatStateOf(0f) }
@@ -375,10 +376,24 @@ private fun ClipperHome(context: Context) {
                         Text(if (twoPersonSplitScreen) "Automatic speaker split-screen: ON" else "Automatic speaker split-screen: OFF")
                     }
 
+                    Button(
+                        onClick = { if (!processing) enableSpeechCaptions = !enableSpeechCaptions },
+                        enabled = !processing,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = if (enableSpeechCaptions) Accent else Color(0xFF292B34))
+                    ) {
+                        Text(if (enableSpeechCaptions) "Offline speech captions: ON (slower)" else "Offline speech captions: OFF (fast first clip)")
+                    }
+                    Text(
+                        "Fast mode skips the speech-model download and creates a video first. Turn captions on only when you specifically want word-timed speech captions.",
+                        color = Muted,
+                        fontSize = 10.sp
+                    )
+
                     if (!semanticModelReady) {
                         Column(Modifier.fillMaxWidth().background(Color(0xFF20202A), RoundedCornerShape(14.dp)).padding(12.dp)) {
                             Text("ONE-TIME AI SETUP", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            Text("Download the free language model once. This panel disappears after installation.", color = Muted, fontSize = 10.sp)
+                            Optional upgrade: this free on-device language model can analyse spoken captions, but it is not required to create or render clips.
                             Button(
                                 onClick = {
                                     if (semanticBusy || processing) return@Button
@@ -447,59 +462,44 @@ private fun ClipperHome(context: Context) {
 
                                 scope.launch {
                                     try {
-                                        if (!speechModelReady) {
-                                            status = "Connecting to the speech-model server…"
-                                            processingProgress = 0.01f
+                                        var speechUnavailableMessage: String? = null
+                                        var speech = SpeechAnalysisResult(emptyList(), emptyList(), emptyList())
+                                        if (enableSpeechCaptions) {
+                                            status = "Preparing optional offline speech captions…"
                                             try {
-                                                withContext(Dispatchers.IO) {
-                                                    SpeechCaptionEngine.downloadModel(context) { value ->
-                                                        scope.launch {
-                                                            processingProgress = 0.01f + value * 0.14f
-                                                            status = if (value < 0.90f) {
-                                                                "Downloading offline speech recognition model… ${(value * 100).toInt()}%"
-                                                            } else {
-                                                                "Verifying and installing speech recognition model…"
+                                                if (!speechModelReady) {
+                                                    processingProgress = 0.01f
+                                                    withContext(Dispatchers.IO) {
+                                                        SpeechCaptionEngine.downloadModel(context) { value ->
+                                                            scope.launch {
+                                                                processingProgress = 0.01f + value * 0.14f
+                                                                status = if (value < 0.90f) {
+                                                                    "Downloading optional speech model… ${(value * 100).toInt()}%"
+                                                                } else {
+                                                                    "Verifying speech model…"
+                                                                }
                                                             }
                                                         }
                                                     }
+                                                    speechModelReady = SpeechCaptionEngine.isModelInstalled(context)
+                                                    if (!speechModelReady) throw IllegalStateException("Speech model installation could not be verified.")
                                                 }
-                                                speechModelReady = SpeechCaptionEngine.isModelInstalled(context)
-                                                if (!speechModelReady) throw IllegalStateException("Speech model installation could not be verified.")
-                                            } catch (error: Exception) {
-                                                speechModelReady = false
-                                                throw IllegalStateException(
-                                                    "Speech recognition setup failed: ${error.localizedMessage ?: error.javaClass.simpleName}. Check your internet connection and free storage, then retry.",
-                                                    error
-                                                )
-                                            }
-                                        }
-                                        processingProgress = 0.15f
-                                        val speakerRecognitionAvailable = speakerModelReady
-                                        status = if (speakerRecognitionAvailable) {
-                                            "Transcribing speech and analysing audio…"
-                                        } else {
-                                            "Transcribing speech and analysing audio (optional speaker separation skipped)…"
-                                        }
-                                        var speechUnavailableMessage: String? = null
-                                        val speech = try {
-                                            withContext(Dispatchers.IO) {
-                                                SpeechCaptionEngine.transcribe(context, uri, durationMs) { value ->
-                                                    scope.launch {
-                                                        processingProgress = 0.15f + value * 0.18f
-                                                        status = "Recognising speech and creating timed captions… ${(value * 100).toInt()}%"
+                                                status = "Transcribing speech and creating timed captions…"
+                                                speech = withContext(Dispatchers.IO) {
+                                                    SpeechCaptionEngine.transcribe(context, uri, durationMs) { value ->
+                                                        scope.launch {
+                                                            processingProgress = 0.15f + value * 0.18f
+                                                            status = "Recognising speech and creating timed captions… ${(value * 100).toInt()}%"
+                                                        }
                                                     }
                                                 }
+                                            } catch (error: Exception) {
+                                                speechModelReady = SpeechCaptionEngine.isModelInstalled(context)
+                                                speechUnavailableMessage = "Speech captions were skipped: ${error.localizedMessage ?: error.javaClass.simpleName}. Continuing with video generation."
+                                                speech = SpeechAnalysisResult(emptyList(), emptyList(), emptyList())
                                             }
-                                        } catch (error: Exception) {
-                                            if (error.localizedMessage?.contains("does not contain an audio track", ignoreCase = true) == true) {
-                                                speechUnavailableMessage = "This source has no audio track. Continuing with visual highlights without spoken captions."
-                                                SpeechAnalysisResult(emptyList(), emptyList(), emptyList())
-                                            } else {
-                                                throw IllegalStateException(
-                                                    "Speech recognition failed: ${error.localizedMessage ?: error.javaClass.simpleName}. The clip was not rendered without its requested captions.",
-                                                    error
-                                                )
-                                            }
+                                        } else {
+                                            status = "Fast mode: skipping speech-model setup and moving to visual analysis…"
                                         }
                                         if (speech.captions.isEmpty()) {
                                             status = speechUnavailableMessage
@@ -704,7 +704,7 @@ private data class FaceScanResult(val track: List<FaceTrackPoint>, val picks: Li
 private fun analyseFaces(context: Context, uri: Uri, durationMs: Long, onProgress: (Float) -> Unit = {}): FaceScanResult {
     if (durationMs < 3000L) return FaceScanResult(emptyList(), emptyList(), emptyList())
     val options = FaceDetectorOptions.Builder()
-        .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
+        .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
         .setMinFaceSize(0.06f)
         .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
         .enableTracking()
@@ -718,6 +718,7 @@ private fun analyseFaces(context: Context, uri: Uri, durationMs: Long, onProgres
     var previousCenterX = 0.5f
     try {
         retriever.setDataSource(context, uri)
+        val faceSampleIntervalMs = (durationMs / 24L).coerceAtLeast(900L)
         var time = 700L
         while (time < durationMs - 500L) {
             val frame = retriever.getFrameAtTime(time * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
@@ -771,7 +772,7 @@ private fun analyseFaces(context: Context, uri: Uri, durationMs: Long, onProgres
                 }
                 sample.recycle()
             }
-            time += 900L
+            time += faceSampleIntervalMs
             onProgress((time.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f))
         }
     } finally {
@@ -834,6 +835,7 @@ private fun findScenePicks(context: Context, uri: Uri, durationMs: Long, onProgr
     try {
         retriever.setDataSource(context, uri)
         var previous: Bitmap? = null
+        val sceneSampleIntervalMs = (durationMs / 24L).coerceAtLeast(2000L)
         var time = 1000L
         while (time < durationMs - 1000L) {
             val frame = retriever.getFrameAtTime(time * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
@@ -861,7 +863,7 @@ private fun findScenePicks(context: Context, uri: Uri, durationMs: Long, onProgr
                 previous?.recycle()
                 previous = small
             }
-            time += 2000L
+            time += sceneSampleIntervalMs
             onProgress((time.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f))
         }
         previous?.recycle()
