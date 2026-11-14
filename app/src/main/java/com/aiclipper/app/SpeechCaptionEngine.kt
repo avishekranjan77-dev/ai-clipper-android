@@ -14,6 +14,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 import java.nio.ByteOrder
 import java.util.zip.ZipInputStream
 
@@ -31,7 +32,8 @@ private class EnergyBucket {
 
 object SpeechCaptionEngine {
     private const val MODEL_NAME = "vosk-model-small-en-us-0.15"
-    private const val MODEL_URL = "https://alphacephei.com/vosk/models/$MODEL_NAME.zip"
+    private const val MODEL_URL = "https://huggingface.co/rhasspy/vosk-models/resolve/main/en/$MODEL_NAME.zip"
+    private const val MODEL_SHA256 = "30f26242c4eb449f948e42cb302dd7a686cb29a3423a8367f99ff41780942498"
     private const val TARGET_RATE = 16000
     private const val SPEAKER_MODEL_NAME = "vosk-model-spk-0.4"
     private const val SPEAKER_MODEL_URL = "https://alphacephei.com/vosk/models/$SPEAKER_MODEL_NAME.zip"
@@ -104,60 +106,113 @@ object SpeechCaptionEngine {
     fun downloadModel(context: Context, onProgress: (Float) -> Unit): File {
         val root = context.filesDir
         val target = File(root, MODEL_NAME)
-        if (File(target, "conf/model.conf").isFile) return target
+        if (isModelInstalled(context)) return target
+
         val archive = File(context.cacheDir, "$MODEL_NAME.zip.part")
+        val staging = File(root, "$MODEL_NAME.installing")
+        archive.delete()
+        staging.deleteRecursively()
+        onProgress(0f)
+
         val connection = (URL(MODEL_URL).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 15000
-            readTimeout = 30000
+            connectTimeout = 20_000
+            readTimeout = 60_000
             instanceFollowRedirects = true
+            setRequestProperty("User-Agent", "AIClipper-Android/1.0")
+            setRequestProperty("Accept-Encoding", "identity")
         }
         try {
             connection.connect()
             if (connection.responseCode !in 200..299) {
-                throw IllegalStateException("Model download failed (HTTP ${connection.responseCode})")
+                throw IllegalStateException("Speech model server returned HTTP ${connection.responseCode}. Check your internet connection and retry.")
             }
             val total = connection.contentLengthLong
+            if (total in 1 until 30L * 1024L * 1024L) {
+                throw IllegalStateException("Speech model download is smaller than expected; the server may have returned an error page.")
+            }
+            var copied = 0L
             BufferedInputStream(connection.inputStream).use { input ->
                 FileOutputStream(archive).use { output ->
                     val buffer = ByteArray(64 * 1024)
-                    var downloaded = 0L
+                    var lastUpdate = 0L
                     while (true) {
                         val count = input.read(buffer)
                         if (count < 0) break
                         output.write(buffer, 0, count)
-                        downloaded += count
-                        if (total > 0) onProgress((downloaded.toFloat() / total).coerceIn(0f, 1f))
+                        copied += count
+                        val now = System.currentTimeMillis()
+                        if (total > 0L && (now - lastUpdate >= 250L || copied == total)) {
+                            onProgress((copied.toFloat() / total.toFloat()).coerceIn(0f, 0.90f))
+                            lastUpdate = now
+                        }
                     }
+                    output.fd.sync()
                 }
             }
+            if (copied < 30L * 1024L * 1024L || (total > 0L && copied != total)) {
+                throw IllegalStateException("Speech model download was incomplete (${copied} bytes). Please retry.")
+            }
+
+            val digest = MessageDigest.getInstance("SHA-256")
+            archive.inputStream().buffered().use { input ->
+                val buffer = ByteArray(128 * 1024)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    digest.update(buffer, 0, count)
+                }
+            }
+            val actualHash = digest.digest().joinToString("") { "%02x".format(it) }
+            if (!actualHash.equals(MODEL_SHA256, ignoreCase = true)) {
+                throw IllegalStateException("Speech model integrity check failed. The download may have been interrupted; please retry.")
+            }
+
+            onProgress(0.92f)
+            val canonicalStaging = staging.canonicalFile
+            if (!staging.mkdirs() && !staging.isDirectory) {
+                throw IllegalStateException("Could not prepare speech model installation storage.")
+            }
+            ZipInputStream(archive.inputStream().buffered()).use { zip ->
+                var entry = zip.nextEntry
+                while (entry != null) {
+                    val out = File(staging, entry.name).canonicalFile
+                    if (!out.path.startsWith(canonicalStaging.path + File.separator)) {
+                        throw SecurityException("Invalid speech model archive path.")
+                    }
+                    if (entry.isDirectory) {
+                        out.mkdirs()
+                    } else {
+                        out.parentFile?.mkdirs()
+                        FileOutputStream(out).use { output -> zip.copyTo(output) }
+                    }
+                    zip.closeEntry()
+                    entry = zip.nextEntry
+                }
+            }
+            val stagedModel = File(staging, "$MODEL_NAME/conf/model.conf")
+            if (!stagedModel.isFile || stagedModel.length() == 0L) {
+                throw IllegalStateException("The speech model archive is valid but does not contain the expected Vosk model.")
+            }
+
+            target.deleteRecursively()
+            val installedFolder = File(staging, MODEL_NAME)
+            if (!installedFolder.isDirectory || !installedFolder.renameTo(target)) {
+                throw IllegalStateException("Speech model extraction finished, but installation could not be completed.")
+            }
+            staging.deleteRecursively()
+            if (!isModelInstalled(context)) {
+                target.deleteRecursively()
+                throw IllegalStateException("Speech model installation verification failed.")
+            }
+            onProgress(1f)
+            return target
+        } catch (error: Exception) {
+            staging.deleteRecursively()
+            throw error
         } finally {
+            archive.delete()
             connection.disconnect()
         }
-        val rootCanonical = root.canonicalFile
-        ZipInputStream(archive.inputStream().buffered()).use { zip ->
-            var entry = zip.nextEntry
-            while (entry != null) {
-                val out = File(root, entry.name).canonicalFile
-                if (!out.path.startsWith(rootCanonical.path + File.separator)) {
-                    throw SecurityException("Invalid model archive path")
-                }
-                if (entry.isDirectory) {
-                    out.mkdirs()
-                } else {
-                    out.parentFile?.mkdirs()
-                    FileOutputStream(out).use { output -> zip.copyTo(output) }
-                }
-                zip.closeEntry()
-                entry = zip.nextEntry
-            }
-        }
-        archive.delete()
-        if (!File(target, "conf/model.conf").isFile) {
-            target.deleteRecursively()
-            throw IllegalStateException("Downloaded speech model is incomplete")
-        }
-        onProgress(1f)
-        return target
     }
 
     fun transcribe(context: Context, source: Uri, durationMs: Long, onProgress: (Float) -> Unit): SpeechAnalysisResult {
