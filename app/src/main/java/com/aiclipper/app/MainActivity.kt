@@ -953,7 +953,7 @@ private suspend fun exportSuggestedClips(
             return
         }
         val (startMs, endMs) = clips[index]
-        val output = File(context.cacheDir, "ai_clip_${System.currentTimeMillis()}_${index}.mp4")
+        val output = File(context.filesDir, "ai_clip_${System.currentTimeMillis()}_${index}.mp4")
         val clipping = MediaItem.ClippingConfiguration.Builder()
             .setStartPositionMs(startMs)
             .setEndPositionMs(endMs)
@@ -998,8 +998,35 @@ private suspend fun exportSuggestedClips(
             }
         }).build()
         transformer.start(edited, output.absolutePath)
+        val progressHolder = androidx.media3.transformer.ProgressHolder()
+        scopeExportProgress(transformer, progressHolder) { value ->
+            onProgress((index.toFloat() + value) / clips.size)
+        }
     }
     exportNext()
+}
+
+private fun scopeExportProgress(
+    transformer: Transformer,
+    progressHolder: androidx.media3.transformer.ProgressHolder,
+    onProgress: (Float) -> Unit
+) {
+    val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    val poll = object : Runnable {
+        override fun run() {
+            try {
+                val state = transformer.getProgress(progressHolder)
+                if (state == Transformer.PROGRESS_STATE_AVAILABLE) {
+                    onProgress(progressHolder.progress / 100f)
+                    handler.postDelayed(this, 500L)
+                } else if (state != Transformer.PROGRESS_STATE_NOT_STARTED) {
+                    handler.postDelayed(this, 500L)
+                }
+            } catch (_: Exception) {
+            }
+        }
+    }
+    handler.post(poll)
 }
 
 private fun copyToGallery(context: Context, source: File): Boolean {
