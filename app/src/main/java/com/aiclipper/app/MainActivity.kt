@@ -131,6 +131,7 @@ private fun ClipperHome(context: Context) {
     var facePicks by remember { mutableStateOf<List<Long>>(emptyList()) }
     var faceTrack by remember { mutableStateOf<List<FaceTrackPoint>>(emptyList()) }
     var scanningFaces by remember { mutableStateOf(false) }
+    var hasAnalysedVideo by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     val player = remember { ExoPlayer.Builder(context).build() }
@@ -161,6 +162,7 @@ private fun ClipperHome(context: Context) {
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         selectedVideo = uri
+        hasAnalysedVideo = false
         selectedVideoName = uri?.let { queryDisplayName(context, it) }
         status = if (uri == null) "No video selected" else "Video loaded. Preview, trim and export are ready."
     }
@@ -212,6 +214,7 @@ private fun ClipperHome(context: Context) {
                                     selectedVideo = Uri.fromFile(localFile)
                                     selectedVideoName = localFile.name
                                     speechCaptions = emptyList()
+                                    hasAnalysedVideo = false
                                     faceTrack = emptyList()
                                     facePicks = emptyList()
                                     scenePicks = emptyList()
@@ -265,6 +268,7 @@ private fun ClipperHome(context: Context) {
                                 scope.launch {
                                     val picks = withContext(Dispatchers.Default) { findScenePicks(context, uri, durationMs) }
                                     scenePicks = picks
+                                    hasAnalysedVideo = true
                                     analysing = false
                                     status = if (picks.isEmpty()) "No strong scene changes found. You can still trim manually." else "Found ${picks.size} possible scene-change moments"
                                 }
@@ -310,6 +314,7 @@ private fun ClipperHome(context: Context) {
                                         val result = withContext(Dispatchers.Default) { analyseFaces(context, uri, durationMs) }
                                         faceTrack = result.track
                                         facePicks = result.picks
+                                        hasAnalysedVideo = true
                                         status = if (result.track.isEmpty()) "No faces detected. You can still use the manual crop." else "Tracked faces in ${result.track.size} sampled moments; found ${result.picks.size} suggested clips."
                                     } catch (error: Exception) {
                                         status = "Face analysis failed: ${error.localizedMessage ?: "try another video"}"
@@ -342,8 +347,8 @@ private fun ClipperHome(context: Context) {
                         valueRange = 1f..30f,
                         steps = 28
                     )
-                    Text("Choose 1–30 clips. Face and scene moments are prioritised, then remaining slots use evenly spaced sections.", color = Muted, fontSize = 10.sp)
-                    val availableMoments = buildClipMoments(facePicks, scenePicks, durationMs, requestedClipCount.toInt())
+                    Text(if (hasAnalysedVideo) "Choose 1–30 clips. Face and scene moments are prioritised, then remaining slots use evenly spaced sections." else "Run Find moments or Track faces first to analyse this video.", color = Muted, fontSize = 10.sp)
+                    val availableMoments = if (hasAnalysedVideo) buildClipMoments(facePicks, scenePicks, durationMs, requestedClipCount.toInt()) else emptyList()
                     if (availableMoments.isNotEmpty()) {
                         Button(
                             onClick = {
