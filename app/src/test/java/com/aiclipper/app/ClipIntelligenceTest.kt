@@ -39,4 +39,28 @@ class ClipIntelligenceTest {
         )
         assertEquals(2, moments.size)
     }
+
+    @Test fun semanticSelectionsAreFilledWithNonOverlappingFallbackRanges() {
+        val merged = ClipIntelligence.mergeExportRanges(
+            preferredRanges = listOf(ClipRange(0L, 90_000L)),
+            fallbackMoments = listOf(20_000L, 100_000L, 180_000L, 250_000L),
+            durationMs = 360_000L,
+            requestedCount = 4
+        )
+        assertEquals(4, merged.size)
+        assertTrue(merged.all { it.durationMs in 60_000L..90_000L })
+        assertTrue(merged.zipWithNext().all { (a, b) -> a.endMs <= b.startMs })
+    }
+
+    @Test fun mergeCapsCountByAvailableSourceDuration() {
+        val merged = ClipIntelligence.mergeExportRanges(
+            preferredRanges = emptyList(),
+            fallbackMoments = listOf(20_000L, 80_000L, 140_000L, 200_000L),
+            durationMs = 120_000L,
+            requestedCount = 30
+        )
+        assertTrue(merged.size <= 2)
+        assertTrue(merged.all { it.startMs >= 0L && it.endMs <= 120_000L })
+    }
+
 }
