@@ -434,7 +434,7 @@ private fun ClipperHome(context: Context) {
                                         status = "Tracking faces and scene changes…"
                                         val faceResult = try {
                                             withContext(Dispatchers.Default) {
-                                                analyseFaces(context, uri, durationMs)
+                                                analyseFaces(context, uri, durationMs) { value -> scope.launch { processingProgress = 0.18f + value * 0.12f } }
                                             }
                                         } catch (_: Exception) {
                                             FaceScanResult(emptyList(), emptyList(), emptyList())
@@ -444,7 +444,7 @@ private fun ClipperHome(context: Context) {
                                         facePicks = faceResult.picks
                                         scenePicks = try {
                                             withContext(Dispatchers.Default) {
-                                                findScenePicks(context, uri, durationMs)
+                                                findScenePicks(context, uri, durationMs) { value -> scope.launch { processingProgress = 0.30f + value * 0.08f } }
                                             }
                                         } catch (_: Exception) {
                                             emptyList()
@@ -600,7 +600,7 @@ internal data class FaceCenter(val x: Float, val y: Float, val mouthOpen: Float 
 internal data class FaceLayoutSample(val timeMs: Long, val faces: List<FaceCenter>, val sourceAspectRatio: Float)
 private data class FaceScanResult(val track: List<FaceTrackPoint>, val picks: List<Long>, val layouts: List<FaceLayoutSample>)
 
-private fun analyseFaces(context: Context, uri: Uri, durationMs: Long): FaceScanResult {
+private fun analyseFaces(context: Context, uri: Uri, durationMs: Long, onProgress: (Float) -> Unit = {}): FaceScanResult {
     if (durationMs < 3000L) return FaceScanResult(emptyList(), emptyList(), emptyList())
     val options = FaceDetectorOptions.Builder()
         .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
@@ -671,6 +671,7 @@ private fun analyseFaces(context: Context, uri: Uri, durationMs: Long): FaceScan
                 sample.recycle()
             }
             time += 900L
+            onProgress((time.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f))
         }
     } finally {
         retriever.release()
@@ -724,7 +725,7 @@ private fun createFaceTrackingEffect(points: List<FaceTrackPoint>, clipStartMs: 
 }
 
 
-private fun findScenePicks(context: Context, uri: Uri, durationMs: Long): List<Long> {
+private fun findScenePicks(context: Context, uri: Uri, durationMs: Long, onProgress: (Float) -> Unit = {}): List<Long> {
     if (durationMs < 4000L) return emptyList()
     val retriever = MediaMetadataRetriever()
     val scores = mutableListOf<Pair<Long, Double>>()
@@ -759,6 +760,7 @@ private fun findScenePicks(context: Context, uri: Uri, durationMs: Long): List<L
                 previous = small
             }
             time += 2000L
+            onProgress((time.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f))
         }
         previous?.recycle()
     } catch (_: Exception) {
