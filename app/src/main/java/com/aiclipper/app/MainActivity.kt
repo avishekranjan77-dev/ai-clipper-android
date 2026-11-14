@@ -899,8 +899,17 @@ private suspend fun exportSuggestedClips(
             .build()
         val item = MediaItem.Builder().setUri(source).setClippingConfiguration(clipping).build()
         val videoEffects = mutableListOf<androidx.media3.common.Effect>()
-        if (twoPersonSplitScreen && faceLayouts.any { it.faces.size >= 2 }) {
-            videoEffects.add(TwoPersonSplitScreenEffect(faceLayouts, speakerTurns, SpeakerFaceMatcher.assign(speakerTurns, faceLayouts), startMs))
+        val clipFaceLayouts = faceLayouts.filter { it.timeMs in startMs..endMs }
+        val clipSpeakerTurns = speakerTurns.filter { it.endMs > startMs && it.startMs < endMs }
+        if (twoPersonSplitScreen && clipFaceLayouts.any { it.faces.size >= 2 }) {
+            videoEffects.add(
+                TwoPersonSplitScreenEffect(
+                    clipFaceLayouts,
+                    clipSpeakerTurns,
+                    SpeakerFaceMatcher.assign(clipSpeakerTurns, clipFaceLayouts),
+                    startMs
+                )
+            )
         } else if (faceTrack.isNotEmpty()) {
             videoEffects.add(createFaceTrackingEffect(faceTrack, startMs, outputAspect))
         }
