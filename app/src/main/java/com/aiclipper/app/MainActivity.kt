@@ -203,7 +203,7 @@ private fun ClipperHome(context: Context) {
                         if (parsed == null || parsed.scheme !in listOf("http", "https") || host.isBlank()) {
                             status = "Enter a valid https:// video-file URL."
                         } else if (host == "youtube.com" || host.endsWith(".youtube.com") || host == "youtu.be" || host.endsWith(".youtu.be")) {
-                            status = "YouTube links are recognised, but direct downloading is not supported. For videos you own, export/download the original from YouTube Studio, then import the file."
+                            status = "YouTube links are recognised, but YouTube does not provide this app with the video stream needed for frame-by-frame AI editing. Import an authorised source video file to create clips."
                         } else if (!raw.substringBefore("?").lowercase(Locale.US).let { it.endsWith(".mp4") || it.endsWith(".m4v") || it.endsWith(".mov") || it.endsWith(".webm") }) {
                             status = "This link does not look like a direct video file. Use a direct MP4, M4V, MOV or WebM URL."
                         } else {
@@ -228,7 +228,7 @@ private fun ClipperHome(context: Context) {
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF292B34))
                 ) { Text("Use video link") }
-                Text("Direct video-file links only. YouTube pages cannot be downloaded by this app.", color = Muted, fontSize = 10.sp)
+                Text("Direct video-file links only. A YouTube URL alone cannot provide the frames and audio needed for editing.", color = Muted, fontSize = 10.sp)
             }
 
             if (selectedVideo != null) {
@@ -257,7 +257,7 @@ private fun ClipperHome(context: Context) {
                 Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.weight(1f)) {
-                            Text("SMART SCENE PICKS", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text("SCENE CHANGE SCAN", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                             Text("Find visual scene changes locally on your phone", color = Muted, fontSize = 11.sp)
                         }
                         Button(
