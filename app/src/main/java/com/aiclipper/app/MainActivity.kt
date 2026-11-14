@@ -348,7 +348,7 @@ private fun ClipperHome(context: Context) {
                         steps = 28
                     )
                     Text(if (hasAnalysedVideo) "Choose 1–30 clips. Face and scene moments are prioritised, then remaining slots use evenly spaced sections." else "Run Find moments or Track faces first to analyse this video.", color = Muted, fontSize = 10.sp)
-                    val availableMoments = if (hasAnalysedVideo) buildClipMoments(facePicks, scenePicks, speechCaptions, durationMs, requestedClipCount.toInt()) else emptyList()
+                    val availableMoments = remember(facePicks, scenePicks, speechCaptions, durationMs, requestedClipCount.toInt(), hasAnalysedVideo) { if (hasAnalysedVideo) buildClipMoments(facePicks, scenePicks, speechCaptions, durationMs, requestedClipCount.toInt()) else emptyList() }
                     if (availableMoments.isNotEmpty()) {
                         Button(
                             onClick = {
@@ -525,9 +525,6 @@ private fun buildClipMoments(
     faceMoments.forEach { candidates.add(it.coerceIn(0L, latestMoment)) }
     sceneMoments.forEach { candidates.add(it.coerceIn(0L, latestMoment)) }
     if (speechCaptions.isNotEmpty()) {
-        speechCaptions.forEach { cue ->
-            candidates.add(((cue.startMs + cue.endMs) / 2L).coerceIn(0L, latestMoment))
-        }
         var t = 10000L
         while (t <= latestMoment) {
             candidates.add(t)
