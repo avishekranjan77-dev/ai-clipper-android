@@ -468,21 +468,17 @@ private fun ClipperHome(context: Context) {
                                             processingProgress = 0.60f
                                         }
 
-                                        val moments = if (ranges.isNotEmpty()) {
-                                            ranges.map { it.startMs + 20_000L }
-                                        } else {
-                                            buildClipMoments(
-                                                facePicks, scenePicks, speechCaptions, audioEnergy,
-                                                durationMs, requestedClipCount.toInt()
-                                            )
-                                        }
-
-                                        val usableRanges = if (ranges.isNotEmpty()) {
-                                            ranges
-                                        } else {
-                                            ClipIntelligence.buildExportRanges(moments, durationMs)
-                                                .take(requestedClipCount.toInt())
-                                        }
+                                        val fallbackMoments = buildClipMoments(
+                                            facePicks, scenePicks, speechCaptions, audioEnergy,
+                                            durationMs, requestedClipCount.toInt()
+                                        )
+                                        val usableRanges = ClipIntelligence.mergeExportRanges(
+                                            preferredRanges = ranges,
+                                            fallbackMoments = fallbackMoments,
+                                            durationMs = durationMs,
+                                            requestedCount = requestedClipCount.toInt()
+                                        )
+                                        val moments = usableRanges.map { it.startMs + 20_000L }
 
                                         if (usableRanges.isEmpty()) {
                                             throw IllegalStateException("AI could not find any usable 60-second moments.")
