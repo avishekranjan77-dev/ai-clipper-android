@@ -490,7 +490,7 @@ private fun ClipperHome(context: Context) {
                                         exportSuggestedClips(
                                             context, uri, moments, durationMs, faceTrack, faceLayouts,
                                             twoPersonSplitScreen, speakerTurns, captionText, speechCaptions,
-                                            captionStyle, usableRanges, outputAspect,
+                                            captionStyle, usableRanges, semanticHighlights, outputAspect,
                                             onProgress = { value ->
                                                 scope.launch {
                                                     processingProgress = 0.70f + value * 0.30f
@@ -849,6 +849,7 @@ private suspend fun exportSuggestedClips(
     speechCaptions: List<CaptionCue>,
     captionStyle: CaptionStyle,
     preferredRanges: List<ClipRange>,
+    highlights: List<SemanticHighlight>,
     outputAspect: String,
     onProgress: (Float) -> Unit,
     onComplete: (List<GeneratedClip>) -> Unit,
@@ -903,7 +904,17 @@ private suspend fun exportSuggestedClips(
         val transformer = Transformer.Builder(context).addListener(object : Transformer.Listener {
             override fun onCompleted(composition: androidx.media3.transformer.Composition, exportResult: ExportResult) {
                 try {
-                    generated.add(GeneratedClip(output, startMs, endMs, outputAspect))
+                    val matchingHighlight = highlights.maxByOrNull { highlight ->
+                        (minOf(highlight.endMs, endMs) - maxOf(highlight.startMs, startMs)).coerceAtLeast(0L)
+                    }?.takeIf { it.endMs > startMs && it.startMs < endMs }
+                    generated.add(
+                        GeneratedClip(
+                            output, startMs, endMs, outputAspect,
+                            matchingHighlight?.title ?: "AI highlight ${index + 1}",
+                            matchingHighlight?.reason.orEmpty(),
+                            matchingHighlight?.score ?: 0
+                        )
+                    )
                     index++
                     onProgress(index.toFloat() / clips.size)
                     exportNext()
