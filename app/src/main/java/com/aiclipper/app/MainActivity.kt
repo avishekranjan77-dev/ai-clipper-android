@@ -141,7 +141,7 @@ private fun ClipperHome(context: Context) {
     var faceLayouts by remember { mutableStateOf<List<FaceLayoutSample>>(emptyList()) }
     var twoPersonSplitScreen by remember { mutableStateOf(true) }
     var captionStyle by remember { mutableStateOf(CaptionStyle.BOLD_POP) }
-    var generatedClips by remember { mutableStateOf<List<GeneratedClip>>(emptyList()) }
+    var generatedClips by remember { mutableStateOf(ClipLibraryStore.load(context)) }
     var semanticModelReady by remember { mutableStateOf(SemanticHighlightEngine.isModelInstalled(context)) }
     var semanticHighlights by remember { mutableStateOf<List<SemanticHighlight>>(emptyList()) }
     var semanticBusy by remember { mutableStateOf(false) }
@@ -149,6 +149,10 @@ private fun ClipperHome(context: Context) {
     var scanningFaces by remember { mutableStateOf(false) }
     var hasAnalysedVideo by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(generatedClips) {
+        withContext(Dispatchers.IO) { ClipLibraryStore.save(context, generatedClips) }
+    }
 
     val player = remember { ExoPlayer.Builder(context).build() }
     DisposableEffect(player) { onDispose { player.release() } }
@@ -189,8 +193,6 @@ private fun ClipperHome(context: Context) {
             startMs = 0L
             endMs = 0L
             selectedVideo = uri
-            generatedClips.forEach { it.file.delete() }
-            generatedClips = emptyList()
             semanticHighlights = emptyList()
             hasAnalysedVideo = false
             speechCaptions = emptyList()
@@ -250,8 +252,6 @@ private fun ClipperHome(context: Context) {
                             scope.launch {
                                 try {
                                     val localFile = withContext(Dispatchers.IO) { downloadLinkedVideo(context, parsed) }
-                                    generatedClips.forEach { it.file.delete() }
-                                    generatedClips = emptyList()
                                     semanticHighlights = emptyList()
                                     durationMs = 0L
                                     startMs = 0L
@@ -424,8 +424,6 @@ private fun ClipperHome(context: Context) {
                                 }
                                 processing = true
                                 processingProgress = 0f
-                                generatedClips.forEach { it.file.delete() }
-                                generatedClips = emptyList()
                                 semanticHighlights = emptyList()
                                 status = "Starting automatic editing…"
 
@@ -547,7 +545,7 @@ private fun ClipperHome(context: Context) {
                                                 }
                                             },
                                             onComplete = { clips ->
-                                                generatedClips = clips
+                                                generatedClips = (generatedClips + clips).distinctBy { it.file.absolutePath }
                                                 processing = false
                                                 processingProgress = 1f
                                                 status = "Finished. Review the edited clips below."
@@ -583,15 +581,6 @@ private fun ClipperHome(context: Context) {
                     )
                 }
 
-                if (generatedClips.isNotEmpty()) {
-                    GeneratedClipReviewPanel(
-                        context,
-                        generatedClips,
-                        onSaved = { count -> status = "Clips saved to Gallery." },
-                        onClipsChanged = { updated -> generatedClips = updated },
-                        onError = { message -> status = message }
-                    )
-                }
             } else {
                 Box(Modifier.weight(1f).fillMaxWidth().background(Panel, RoundedCornerShape(24.dp)), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
@@ -601,6 +590,20 @@ private fun ClipperHome(context: Context) {
                         Spacer(Modifier.height(8.dp))
                         Text("Import a video, choose the number and format, then let AI do the analysis, editing and rendering automatically.", color = Muted, fontSize = 13.sp, lineHeight = 20.sp)
                     }
+                }
+            }
+
+            if (generatedClips.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("YOUR CLIP LIBRARY", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("Clips stay on this phone until you save them to Gallery or skip them.", color = Muted, fontSize = 10.sp)
+                    GeneratedClipReviewPanel(
+                        context,
+                        generatedClips,
+                        onSaved = { status = "Clips saved to Gallery." },
+                        onClipsChanged = { updated -> generatedClips = updated },
+                        onError = { message -> status = message }
+                    )
                 }
             }
 
