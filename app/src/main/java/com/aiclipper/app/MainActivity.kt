@@ -149,6 +149,10 @@ private fun ClipperHome(context: Context) {
     var scanningFaces by remember { mutableStateOf(false) }
     var hasAnalysedVideo by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val selectedClipLengthMs = (maxClipDurationSeconds.toLong() * 1000L).coerceAtLeast(MIN_SHORT_DURATION_MS)
+    val maxPossibleClips = if (durationMs >= MIN_SHORT_DURATION_MS) {
+        (durationMs / selectedClipLengthMs.coerceAtMost(durationMs)).toInt().coerceAtLeast(1)
+    } else 0
 
     LaunchedEffect(generatedClips) {
         withContext(Dispatchers.IO) { ClipLibraryStore.save(context, generatedClips) }
@@ -315,7 +319,12 @@ private fun ClipperHome(context: Context) {
                         valueRange = 60f..180f,
                         steps = 3
                     )
-                    Text("Clips remain at least 60 seconds long. The source duration limits how many non-overlapping clips can fit at this length.", color = Muted, fontSize = 10.sp)
+                    Text(
+                        if (maxPossibleClips > 0) "At this length, this source can fit up to $maxPossibleClips non-overlapping clips. The final count is capped by source duration."
+                        else "Clips remain at least 60 seconds long. Choose a source of at least one minute.",
+                        color = Muted,
+                        fontSize = 10.sp
+                    )
 
                     Text("OPTIONAL AI HIGHLIGHT FOCUS", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                     BasicTextField(
