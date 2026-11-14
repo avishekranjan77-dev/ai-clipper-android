@@ -96,7 +96,7 @@ private val Panel = Color(0xFF15171D)
 private val Accent = Color(0xFF8B7CFF)
 private val Muted = Color(0xFF9295A1)
 private val Green = Color(0xFF62D69A)
-private const val MIN_SHORT_DURATION_MS = 60_000L
+const val MIN_SHORT_DURATION_MS = ClipIntelligence.MIN_SHORT_DURATION_MS
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -536,74 +536,9 @@ private fun buildClipMoments(
     audioEnergy: List<AudioEnergyPoint>,
     durationMs: Long,
     requestedCount: Int
-): List<Long> {
-    if (durationMs < MIN_SHORT_DURATION_MS || requestedCount <= 0) return emptyList()
-    val clipLengthMs = MIN_SHORT_DURATION_MS
-    val leadInMs = 20000L
-    val maxByDuration = (durationMs / clipLengthMs).toInt().coerceAtLeast(1)
-    val target = requestedCount.coerceIn(1, 30).coerceAtMost(maxByDuration)
-    // The scored moment sits about 20 seconds into its 60-second Short.
-    val latestMoment = (durationMs - (clipLengthMs - leadInMs)).coerceAtLeast(0L)
-
-    // Candidate windows are scored from transcript evidence plus independent visual signals.
-    val candidates = linkedSetOf<Long>()
-    faceMoments.forEach { candidates.add(it.coerceIn(0L, latestMoment)) }
-    sceneMoments.forEach { candidates.add(it.coerceIn(0L, latestMoment)) }
-    if (speechCaptions.isNotEmpty() || audioEnergy.isNotEmpty()) {
-        var t = 10000L
-        while (t <= latestMoment) {
-            candidates.add(t)
-            t += 5000L
-        }
-    } else {
-        for (i in 0 until target * 4) {
-            val fraction = (i + 0.5f) / (target * 4f)
-            candidates.add((latestMoment * fraction).toLong())
-        }
-    }
-
-    val hookTerms = listOf(
-        "why", "how", "what if", "the truth", "secret", "mistake", "never",
-        "always", "because", "the reason", "actually", "imagine", "listen",
-        "wait", "look", "important", "remember", "best", "worst", "crazy",
-        "amazing", "problem", "solution", "first time", "nobody", "everyone"
-    )
-    fun score(moment: Long): Double {
-        val start = (moment - leadInMs).coerceAtLeast(0L)
-        val end = (start + clipLengthMs).coerceAtMost(durationMs)
-        val cues = speechCaptions.filter { it.endMs > start && it.startMs < end }
-        val transcript = cues.joinToString(" ") { it.text.lowercase(Locale.US) }
-        val words = transcript.split(Regex("\\s+")).count { it.isNotBlank() }
-        val densityScore = (words / 55.0).coerceIn(0.0, 1.25) * 20.0
-        val hookScore = hookTerms.sumOf { term ->
-            if (Regex("\\b" + Regex.escape(term) + "\\b").containsMatchIn(transcript)) 4.0 else 0.0
-        }.coerceAtMost(24.0)
-        val continuityScore = (cues.size / 5.0).coerceIn(0.0, 1.0) * 8.0
-        val faceScore = if (faceMoments.any { kotlin.math.abs(it - moment) <= 12000L }) 12.0 else 0.0
-        val sceneScore = if (sceneMoments.any { kotlin.math.abs(it - moment) <= 10000L }) 7.0 else 0.0
-        val speechPenalty = if (speechCaptions.isNotEmpty() && words < 8) 18.0 else 0.0
-        val energyValues = audioEnergy.asSequence()
-            .filter { it.timeMs >= start && it.timeMs < end }
-            .map { it.rms.toDouble() }
-            .toList()
-        val averageEnergy = if (energyValues.isEmpty()) 0.0 else energyValues.average()
-        val peakEnergy = energyValues.maxOrNull() ?: 0.0
-        val audioEnergyScore = (averageEnergy * 70.0 + peakEnergy * 30.0).coerceIn(0.0, 12.0)
-        return densityScore + hookScore + continuityScore + faceScore + sceneScore + audioEnergyScore - speechPenalty
-    }
-
-    val ranked = candidates.map { it to score(it) }.sortedByDescending { it.second }
-    val selected = mutableListOf<Long>()
-    for ((moment, _) in ranked) {
-        if (selected.size >= target) break
-        val proposedStart = (moment - leadInMs).coerceAtLeast(0L)
-        if (selected.none { existing ->
-                val existingStart = (existing - leadInMs).coerceAtLeast(0L)
-                kotlin.math.abs(existingStart - proposedStart) < clipLengthMs
-            }) selected.add(moment)
-    }
-    return selected.sorted().take(target)
-}
+): List<Long> = ClipIntelligence.selectMoments(
+    faceMoments, sceneMoments, speechCaptions, audioEnergy, durationMs, requestedCount
+)
 
 private fun Player.isReadyForDuration(): Boolean = playbackState == Player.STATE_READY && duration > 0
 
@@ -836,11 +771,8 @@ private suspend fun exportSuggestedClips(
     onComplete: (String) -> Unit,
     onError: (String) -> Unit
 ) = withContext(Dispatchers.Main) {
-    val clips = moments.distinct().sorted().map { moment ->
-        val start = (moment - 20000L).coerceAtLeast(0L)
-        val end = (start + MIN_SHORT_DURATION_MS).coerceAtMost(durationMs)
-        start to end
-    }.filter { it.second - it.first >= MIN_SHORT_DURATION_MS }
+    val clips = ClipIntelligence.buildExportRanges(moments, durationMs)
+        .map { it.startMs to it.endMs }
     if (clips.isEmpty()) {
         onError("No usable AI clip ranges were found.")
         return@withContext
