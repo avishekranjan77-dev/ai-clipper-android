@@ -5,7 +5,7 @@ An offline-first Android video clipping app built with Kotlin, Jetpack Compose a
 ## Current features
 
 - Import a video from the Android photo picker or a direct HTTP(S) MP4, M4V, MOV or WebM file URL.
-- Choose 1–30 clips and optionally describe the moments the AI should prioritize.
+- Choose 1–30 clips, set a maximum clip length from 1 to 3 minutes, and optionally describe the moments the AI should prioritize. Generated clips remain at least 60 seconds long.
 - Analyse speech, audio energy, scene changes and faces, then rank meaningful moments.
 - Use on-device Qwen3 transcript understanding when its one-time model download is installed; deterministic local signals remain as a fallback.
 - Automatically reframe clips using face tracking and a two-person split-screen layout when two faces are present in that specific clip.
