@@ -142,7 +142,7 @@ private fun ClipperHome(context: Context) {
     var facePicks by remember { mutableStateOf<List<Long>>(emptyList()) }
     var faceTrack by remember { mutableStateOf<List<FaceTrackPoint>>(emptyList()) }
     var faceLayouts by remember { mutableStateOf<List<FaceLayoutSample>>(emptyList()) }
-    var twoPersonSplitScreen by remember { mutableStateOf(true) }
+    var twoPersonSplitScreen by remember { mutableStateOf(false) }
     var captionStyle by remember { mutableStateOf(CaptionStyle.BOLD_POP) }
     var generatedClips by remember { mutableStateOf(ClipLibraryStore.load(context)) }
     var semanticModelReady by remember { mutableStateOf(SemanticHighlightEngine.isModelInstalled(context)) }
@@ -502,8 +502,11 @@ private fun ClipperHome(context: Context) {
                                             status = "Fast mode: skipping speech-model setup and moving to visual analysis…"
                                         }
                                         if (speech.captions.isEmpty()) {
-                                            status = speechUnavailableMessage
-                                                ?: "No speech was detected. Continuing with visual highlights; spoken captions will be empty."
+                                            status = speechUnavailableMessage ?: if (!enableSpeechCaptions) {
+                                                "Speech captions are off. Continuing with fast visual clip selection…"
+                                            } else {
+                                                "No speech was detected. Continuing with visual highlights; spoken captions will be empty."
+                                            }
                                         }
                                         speechCaptions = speech.captions
                                         speakerTurns = speech.speakerTurns
@@ -1011,9 +1014,9 @@ private suspend fun exportSuggestedClips(
             videoEffects.add(createFaceTrackingEffect(clipFaceTrack, startMs, outputAspect))
         }
         when (outputAspect) {
-            "9:16" -> videoEffects.add(Presentation.createForWidthAndHeight(1080, 1920, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
-            "1:1" -> videoEffects.add(Presentation.createForWidthAndHeight(1080, 1080, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
-            "16:9" -> videoEffects.add(Presentation.createForWidthAndHeight(1920, 1080, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+            "9:16" -> videoEffects.add(Presentation.createForWidthAndHeight(720, 1280, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+            "1:1" -> videoEffects.add(Presentation.createForWidthAndHeight(720, 720, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+            "16:9" -> videoEffects.add(Presentation.createForWidthAndHeight(1280, 720, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
             // Original keeps the source video's dimensions and aspect ratio.
         }
         val clipCues = speechCaptions.filter { it.endMs > startMs && it.startMs < endMs }.map { cue ->
