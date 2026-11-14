@@ -83,6 +83,8 @@ import android.text.style.ForegroundColorSpan
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.Locale
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
@@ -203,13 +205,21 @@ private fun ClipperHome(context: Context) {
                         } else if (!raw.substringBefore("?").lowercase(Locale.US).let { it.endsWith(".mp4") || it.endsWith(".m4v") || it.endsWith(".mov") || it.endsWith(".webm") }) {
                             status = "This link does not look like a direct video file. Use a direct MP4, M4V, MOV or WebM URL."
                         } else {
-                            selectedVideo = parsed
-                            selectedVideoName = parsed.lastPathSegment?.substringAfterLast('/') ?: "Linked video"
-                            speechCaptions = emptyList()
-                            faceTrack = emptyList()
-                            facePicks = emptyList()
-                            scenePicks = emptyList()
-                            status = "Linked video loaded. It will stream during preview/export; a stable internet connection is required."
+                            status = "Downloading linked video to local storage…"
+                            scope.launch {
+                                try {
+                                    val localFile = withContext(Dispatchers.IO) { downloadLinkedVideo(context, parsed) }
+                                    selectedVideo = Uri.fromFile(localFile)
+                                    selectedVideoName = localFile.name
+                                    speechCaptions = emptyList()
+                                    faceTrack = emptyList()
+                                    facePicks = emptyList()
+                                    scenePicks = emptyList()
+                                    status = "Linked video imported. You can now analyse and create clips."
+                                } catch (error: Exception) {
+                                    status = "Link import failed: ${error.localizedMessage ?: "check the URL and access permissions"}"
+                                }
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -817,6 +827,50 @@ private fun copyToGallery(context: Context, source: File): Boolean {
         context.contentResolver.update(uri, done, null, null)
     }
     return true
+}
+
+private fun downloadLinkedVideo(context: Context, uri: Uri): File {
+    val extension = uri.lastPathSegment?.substringAfterLast('.', "mp4")?.lowercase(Locale.US)
+        ?.takeIf { it in setOf("mp4", "m4v", "mov", "webm") } ?: "mp4"
+    val destination = File(context.cacheDir, "linked_video_${System.currentTimeMillis()}.$extension")
+    val connection = (URL(uri.toString()).openConnection() as HttpURLConnection).apply {
+        connectTimeout = 20000
+        readTimeout = 60000
+        instanceFollowRedirects = true
+        requestMethod = "GET"
+    }
+    try {
+        connection.connect()
+        if (connection.responseCode !in 200..299) {
+            throw IllegalStateException("Server returned HTTP ${connection.responseCode}")
+        }
+        val contentType = connection.contentType?.lowercase(Locale.US).orEmpty()
+        if (contentType.isNotBlank() && !contentType.startsWith("video/") && !contentType.contains("octet-stream")) {
+            throw IllegalStateException("The link did not return a video file")
+        }
+        val maxBytes = 2L * 1024L * 1024L * 1024L
+        if (connection.contentLengthLong > maxBytes) throw IllegalStateException("Video link is larger than the 2 GB import limit")
+        connection.inputStream.use { input ->
+            destination.outputStream().buffered().use { output ->
+                val buffer = ByteArray(64 * 1024)
+                var total = 0L
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    total += count
+                    if (total > maxBytes) throw IllegalStateException("Video link is larger than the 2 GB import limit")
+                    output.write(buffer, 0, count)
+                }
+            }
+        }
+        if (destination.length() < 1024L) throw IllegalStateException("Downloaded file is empty or incomplete")
+        return destination
+    } catch (error: Exception) {
+        destination.delete()
+        throw error
+    } finally {
+        connection.disconnect()
+    }
 }
 
 private fun queryDisplayName(context: Context, uri: Uri): String {
