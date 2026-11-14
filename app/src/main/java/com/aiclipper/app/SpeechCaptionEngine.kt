@@ -34,6 +34,7 @@ object SpeechCaptionEngine {
     private const val MODEL_NAME = "vosk-model-small-en-us-0.15"
     private const val MODEL_URL = "https://huggingface.co/rhasspy/vosk-models/resolve/main/en/$MODEL_NAME.zip"
     private const val MODEL_SHA256 = "30f26242c4eb449f948e42cb302dd7a686cb29a3423a8367f99ff41780942498"
+    private const val MODEL_EXPECTED_BYTES = 41_166_628L
     private const val TARGET_RATE = 16000
     private const val SPEAKER_MODEL_NAME = "vosk-model-spk-0.4"
     private const val SPEAKER_MODEL_URL = "https://alphacephei.com/vosk/models/$SPEAKER_MODEL_NAME.zip"
@@ -135,14 +136,15 @@ object SpeechCaptionEngine {
                 FileOutputStream(archive).use { output ->
                     val buffer = ByteArray(64 * 1024)
                     var lastUpdate = 0L
+                    val progressTotal = total.takeIf { it > 0L } ?: MODEL_EXPECTED_BYTES
                     while (true) {
                         val count = input.read(buffer)
                         if (count < 0) break
                         output.write(buffer, 0, count)
                         copied += count
                         val now = System.currentTimeMillis()
-                        if (total > 0L && (now - lastUpdate >= 250L || copied == total)) {
-                            onProgress((copied.toFloat() / total.toFloat()).coerceIn(0f, 0.90f))
+                        if (now - lastUpdate >= 250L || copied >= progressTotal) {
+                            onProgress((copied.toFloat() / progressTotal.toFloat()).coerceIn(0f, 0.90f))
                             lastUpdate = now
                         }
                     }
@@ -347,8 +349,8 @@ object SpeechCaptionEngine {
             return SpeechAnalysisResult(groupWords(rawWords), energy, speakerTurns)
         } finally {
             try { codec?.stop() } catch (_: Exception) {}
-            codec?.release()
-            extractor.release()
+            try { codec?.release() } catch (_: Exception) {}
+            try { extractor.release() } catch (_: Exception) {}
             try { recognizerForCleanup?.close() } catch (_: Exception) {}
             try { speakerModel?.close() } catch (_: Exception) {}
             try { model?.close() } catch (_: Exception) {}
