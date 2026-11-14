@@ -132,6 +132,8 @@ private fun ClipperHome(context: Context) {
     var scenePicks by remember { mutableStateOf<List<Long>>(emptyList()) }
     var facePicks by remember { mutableStateOf<List<Long>>(emptyList()) }
     var faceTrack by remember { mutableStateOf<List<FaceTrackPoint>>(emptyList()) }
+    var faceLayouts by remember { mutableStateOf<List<FaceLayoutSample>>(emptyList()) }
+    var twoPersonSplitScreen by remember { mutableStateOf(true) }
     var scanningFaces by remember { mutableStateOf(false) }
     var hasAnalysedVideo by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -168,6 +170,7 @@ private fun ClipperHome(context: Context) {
         speechCaptions = emptyList()
         audioEnergy = emptyList()
         faceTrack = emptyList()
+        faceLayouts = emptyList()
         facePicks = emptyList()
         scenePicks = emptyList()
         selectedVideoName = uri?.let { queryDisplayName(context, it) }
@@ -224,6 +227,7 @@ private fun ClipperHome(context: Context) {
                                     audioEnergy = emptyList()
                                     hasAnalysedVideo = false
                                     faceTrack = emptyList()
+                                    faceLayouts = emptyList()
                                     facePicks = emptyList()
                                     scenePicks = emptyList()
                                     status = "Linked video imported. You can now analyse and create clips."
@@ -321,6 +325,7 @@ private fun ClipperHome(context: Context) {
                                     try {
                                         val result = withContext(Dispatchers.Default) { analyseFaces(context, uri, durationMs) }
                                         faceTrack = result.track
+                                        faceLayouts = result.layouts
                                         facePicks = result.picks
                                         hasAnalysedVideo = true
                                         status = if (result.track.isEmpty()) "No faces detected. You can still use the manual crop." else "Tracked faces in ${result.track.size} sampled moments; found ${result.picks.size} suggested clips."
@@ -374,7 +379,7 @@ private fun ClipperHome(context: Context) {
                                 status = "Creating ${chosenMoments.size} clips…"
                                 scope.launch {
                                     exportSuggestedClips(
-                                        context, uri, chosenMoments, durationMs, faceTrack, captionText, speechCaptions,
+                                        context, uri, chosenMoments, durationMs, faceTrack, faceLayouts, twoPersonSplitScreen, captionText, speechCaptions,
                                         onProgress = { exportProgress = it },
                                         onComplete = { message -> exporting = false; status = message },
                                         onError = { message -> exporting = false; status = message }
@@ -411,6 +416,19 @@ private fun ClipperHome(context: Context) {
                         Button(onClick = { portrait = false }, colors = ButtonDefaults.buttonColors(containerColor = if (!portrait) Accent else Color(0xFF292B34)), modifier = Modifier.weight(1f)) { Text("Original") }
                     }
                     Text(if (portrait) "Portrait crop for Shorts, Reels and TikTok" else "Keep the source video's original framing", color = Muted, fontSize = 11.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = { twoPersonSplitScreen = !twoPersonSplitScreen },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = if (twoPersonSplitScreen) Accent else Color(0xFF292B34))
+                    ) {
+                        Text(if (twoPersonSplitScreen) "Two-person split screen: ON" else "Two-person split screen: OFF")
+                    }
+                    Text(
+                        if (faceLayouts.isNotEmpty()) "Two-person framing found at ${faceLayouts.size} sampled moments."
+                        else "When two faces are visible, each participant can be framed in a separate panel.",
+                        color = Muted, fontSize = 10.sp
+                    )
                 }
                 Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(16.dp)) {
                     Text("CAPTION OVERLAY", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
@@ -543,10 +561,12 @@ private fun buildClipMoments(
 private fun Player.isReadyForDuration(): Boolean = playbackState == Player.STATE_READY && duration > 0
 
 private data class FaceTrackPoint(val timeMs: Long, val centerX: Float, val faceCount: Int, val aspectRatio: Float, val primaryFaceId: Int?)
-private data class FaceScanResult(val track: List<FaceTrackPoint>, val picks: List<Long>)
+internal data class FaceCenter(val x: Float, val y: Float)
+internal data class FaceLayoutSample(val timeMs: Long, val faces: List<FaceCenter>, val sourceAspectRatio: Float)
+private data class FaceScanResult(val track: List<FaceTrackPoint>, val picks: List<Long>, val layouts: List<FaceLayoutSample>)
 
 private fun analyseFaces(context: Context, uri: Uri, durationMs: Long): FaceScanResult {
-    if (durationMs < 3000L) return FaceScanResult(emptyList(), emptyList())
+    if (durationMs < 3000L) return FaceScanResult(emptyList(), emptyList(), emptyList())
     val options = FaceDetectorOptions.Builder()
         .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
         .setMinFaceSize(0.06f)
@@ -556,6 +576,7 @@ private fun analyseFaces(context: Context, uri: Uri, durationMs: Long): FaceScan
     val retriever = MediaMetadataRetriever()
     val points = mutableListOf<FaceTrackPoint>()
     val scored = mutableListOf<Pair<Long, Double>>()
+    val layouts = mutableListOf<FaceLayoutSample>()
     var primaryFaceId: Int? = null
     var previousCenterX = 0.5f
     try {
@@ -571,6 +592,19 @@ private fun analyseFaces(context: Context, uri: Uri, durationMs: Long): FaceScan
                 if (faces.isNotEmpty()) {
                     val faceCenters = faces.map { face ->
                         face.boundingBox.centerX().toFloat() / sample.width
+                    }
+                    if (faces.size >= 2) {
+                        val pair = faces.sortedBy { it.boundingBox.centerX() }.take(2)
+                        layouts.add(FaceLayoutSample(
+                            time,
+                            pair.map { face ->
+                                FaceCenter(
+                                    (face.boundingBox.centerX().toFloat() / sample.width).coerceIn(0.05f, 0.95f),
+                                    (face.boundingBox.centerY().toFloat() / sample.height).coerceIn(0.05f, 0.95f)
+                                )
+                            },
+                            sample.width.toFloat() / sample.height.toFloat()
+                        ))
                     }
                     val selectedFace = faces.firstOrNull { it.trackingId == primaryFaceId }
                         ?: faces.minByOrNull { kotlin.math.abs(it.boundingBox.centerX().toFloat() / sample.width - previousCenterX) }
@@ -606,7 +640,7 @@ private fun analyseFaces(context: Context, uri: Uri, durationMs: Long): FaceScan
         if (picks.none { kotlin.math.abs(it - time) < 30000L }) picks.add(time)
         if (picks.size >= 6) break
     }
-    return FaceScanResult(points, picks.sorted())
+    return FaceScanResult(points, picks.sorted(), layouts)
 }
 
 private fun createFaceTrackingEffect(points: List<FaceTrackPoint>, clipStartMs: Long): MatrixTransformation {
@@ -765,6 +799,8 @@ private suspend fun exportSuggestedClips(
     moments: List<Long>,
     durationMs: Long,
     faceTrack: List<FaceTrackPoint>,
+    faceLayouts: List<FaceLayoutSample>,
+    twoPersonSplitScreen: Boolean,
     caption: String,
     speechCaptions: List<CaptionCue>,
     onProgress: (Float) -> Unit,
@@ -792,7 +828,11 @@ private suspend fun exportSuggestedClips(
             .build()
         val item = MediaItem.Builder().setUri(source).setClippingConfiguration(clipping).build()
         val videoEffects = mutableListOf<androidx.media3.common.Effect>()
-        if (faceTrack.isNotEmpty()) videoEffects.add(createFaceTrackingEffect(faceTrack, startMs))
+        if (twoPersonSplitScreen && faceLayouts.any { it.faces.size >= 2 }) {
+            videoEffects.add(TwoPersonSplitScreenEffect(faceLayouts))
+        } else if (faceTrack.isNotEmpty()) {
+            videoEffects.add(createFaceTrackingEffect(faceTrack, startMs))
+        }
         videoEffects.add(Presentation.createForWidthAndHeight(1080, 1920, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
         val clipCues = speechCaptions.filter { it.endMs > startMs && it.startMs < endMs }.map {
             CaptionCue((it.startMs - startMs).coerceAtLeast(0L), (it.endMs - startMs).coerceAtMost(endMs - startMs), it.text)
