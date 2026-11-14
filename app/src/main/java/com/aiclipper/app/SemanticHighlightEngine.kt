@@ -133,6 +133,7 @@ object SemanticHighlightEngine {
         )
         engine.initialize()
         val candidates = mutableListOf<SemanticHighlight>()
+        val refinedCandidates: List<SemanticHighlight>
         try {
             windows.forEachIndexed { index, window ->
                 val conversation = engine.createConversation(
@@ -150,13 +151,61 @@ object SemanticHighlightEngine {
                     conversation.close()
                 }
                 candidates.addAll(parseHighlights(response, window.startMs, window.endMs, captions))
-                onProgress((index + 1f) / windows.size)
+                onProgress((index + 1f) / (windows.size + 1f))
             }
+            refinedCandidates = globallyRefine(engine, candidates)
+            onProgress(1f)
         } finally {
             engine.close()
         }
 
-        rankAndMerge(candidates, requestedCount, durationMs, faceMoments, sceneMoments, audioEnergy, speakerTurns)
+        rankAndMerge(refinedCandidates, requestedCount, durationMs, faceMoments, sceneMoments, audioEnergy, speakerTurns)
+    }
+
+    /**
+     * Second pass compares candidate summaries from every transcript window together.
+     * This helps the model choose varied, high-value moments across the full source video.
+     */
+    private fun globallyRefine(engine: Engine, candidates: List<SemanticHighlight>): List<SemanticHighlight> {
+        val pool = candidates.distinctBy { it.startMs }.sortedByDescending { it.score }.take(30)
+        if (pool.size <= 1) return pool
+        val options = pool.mapIndexed { index, item ->
+            "$index | ${item.startMs}-${item.endMs} ms | score ${item.score} | ${item.title} | ${item.reason}"
+        }.joinToString("\n")
+        val conversation = engine.createConversation(
+            ConversationConfig(
+                systemInstruction = Contents.of(
+                    "You are the final editor selecting the best moments across an entire long video. " +
+                        "Prioritize genuine meaning, complete context, variety and strong viewer value. Return valid JSON only."
+                )
+            )
+        )
+        val response = try {
+            conversation.sendMessage(
+                "Compare these candidate moments from the complete source video. Select the strongest and most varied moments. " +
+                    "Do not select overlapping ranges or repeated versions of the same point. " +
+                    "Return up to ${pool.size} items in ranked order with original integer id and revised score 0-100. " +
+                    "Do not invent ids. JSON only: {\"ranked\":[{\"id\":0,\"score\":95}]}\n\nCANDIDATES:\n$options"
+            ).toString()
+        } finally {
+            conversation.close()
+        }
+        val fence = String(charArrayOf(96, 96, 96))
+        val cleaned = response.substringAfter("</think>", response).replace(fence + "json", "").replace(fence, "")
+        val first = cleaned.indexOf('{')
+        val last = cleaned.lastIndexOf('}')
+        if (first < 0 || last <= first) return pool
+        val array = runCatching {
+            JSONObject(cleaned.substring(first, last + 1)).optJSONArray("ranked")
+        }.getOrNull() ?: return pool
+        val refined = mutableListOf<SemanticHighlight>()
+        for (i in 0 until array.length()) {
+            val row = array.optJSONObject(i) ?: continue
+            val id = row.optInt("id", -1)
+            val item = pool.getOrNull(id) ?: continue
+            refined.add(item.copy(score = row.optInt("score", item.score).coerceIn(0, 100)))
+        }
+        return if (refined.isEmpty()) pool else refined
     }
 
     private data class TranscriptWindow(val startMs: Long, val endMs: Long, val cues: List<CaptionCue>)
