@@ -395,15 +395,27 @@ private fun ClipperHome(context: Context) {
                                             withContext(Dispatchers.IO) { SpeechCaptionEngine.downloadModel(context) {} }
                                             speechModelReady = true
                                         }
+                                        var speakerRecognitionAvailable = speakerModelReady
                                         if (!speakerModelReady) {
-                                            status = "Installing speaker recognition…"
-                                            withContext(Dispatchers.IO) { SpeechCaptionEngine.downloadSpeakerModel(context) {} }
-                                            speakerModelReady = true
+                                            status = "Installing optional speaker recognition…"
+                                            try {
+                                                withContext(Dispatchers.IO) { SpeechCaptionEngine.downloadSpeakerModel(context) {} }
+                                                speakerModelReady = true
+                                                speakerRecognitionAvailable = true
+                                            } catch (_: Exception) {
+                                                // Speaker diarization is optional. Continue with face tracking if its model is unavailable.
+                                                speakerRecognitionAvailable = false
+                                            }
                                         }
 
-                                        status = "Transcribing speech and analysing audio…"
-                                        val speech = withContext(Dispatchers.IO) {
-                                            SpeechCaptionEngine.transcribe(context, uri) {}
+                                        status = if (speakerRecognitionAvailable) "Transcribing speech and analysing audio…" else "Transcribing speech (speaker model unavailable; face tracking remains enabled)…"
+                                        val speech = try {
+                                            withContext(Dispatchers.IO) {
+                                                SpeechCaptionEngine.transcribe(context, uri) {}
+                                            }
+                                        } catch (speechError: Exception) {
+                                            status = "Speech analysis unavailable; continuing with visual scene and face analysis…"
+                                            SpeechAnalysisResult(emptyList(), emptyList(), emptyList())
                                         }
                                         speechCaptions = speech.captions
                                         speakerTurns = speech.speakerTurns
