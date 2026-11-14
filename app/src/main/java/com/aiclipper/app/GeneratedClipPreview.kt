@@ -144,7 +144,7 @@ fun GeneratedClipReviewPanel(
                             busy = true
                             scope.launch {
                                 try {
-                                    withContext(Dispatchers.IO) { saveGeneratedClip(context, clip.file) }
+                                    withContext(Dispatchers.IO) { saveGeneratedClip(context, clip) }
                                     clip.file.delete()
                                     reviewClips = reviewClips.filterNot { it.file == clip.file }
                                     onClipsChanged(reviewClips)
@@ -197,9 +197,11 @@ fun GeneratedClipReviewPanel(
     }
 }
 
-private fun saveGeneratedClip(context: Context, source: File) {
+private fun saveGeneratedClip(context: Context, clip: GeneratedClip) {
+    val source = clip.file
+    val safeTitle = clip.title.replace(Regex("[^A-Za-z0-9_-]+"), "_").trim('_').take(32).ifBlank { "Highlight" }
     val values = ContentValues().apply {
-        put(MediaStore.Video.Media.DISPLAY_NAME, "AIClip_${System.currentTimeMillis()}.mp4")
+        put(MediaStore.Video.Media.DISPLAY_NAME, "AIClip_${safeTitle}_${System.currentTimeMillis()}.mp4")
         put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/AI Clipper")
