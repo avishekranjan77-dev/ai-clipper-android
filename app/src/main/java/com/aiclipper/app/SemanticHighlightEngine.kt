@@ -231,7 +231,9 @@ object SemanticHighlightEngine {
                 systemInstruction = Contents.of(
                     "You are the final editor selecting the best moments across an entire long video. " +
                         "Prioritize genuine meaning, complete context, variety and strong viewer value. Return valid JSON only."
-                )
+                ),
+                thinkingConfig = ThinkingConfig(enableThinking = false, thinkingTokenBudget = 0),
+                maxOutputToken = 384
             )
         )
         val response = try {
