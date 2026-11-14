@@ -48,7 +48,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
 
-data class GeneratedClip(val file: File, val startMs: Long, val endMs: Long, val aspectRatio: String = "9:16") {
+data class GeneratedClip(val file: File, val startMs: Long, val endMs: Long, val aspectRatio: String = "9:16", val title: String = "AI highlight", val reason: String = "", val score: Int = 0) {
     val durationMs: Long get() = endMs - startMs
 }
 
@@ -104,8 +104,9 @@ fun GeneratedClipReviewPanel(
             itemsIndexed(reviewClips) { index, clip ->
                 Row(Modifier.fillMaxWidth().background(if (index == selectedIndex) Color(0xFF29263F) else Color(0xFF22242C), RoundedCornerShape(10.dp)).padding(9.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                     Column(Modifier.weight(1f)) {
-                        Text("Clip ${index + 1}  •  ${clip.durationMs / 1000}s", color = Color.White, fontSize = 12.sp)
-                        Text(if (index == selectedIndex) "Selected for preview" else "Tap Preview to watch", color = Color(0xFF9295A1), fontSize = 10.sp)
+                        Text(clip.title, color = Color.White, fontSize = 12.sp, maxLines = 1)
+                        Text("Clip ${index + 1} • ${clip.durationMs / 1000}s • AI score ${clip.score}", color = Color(0xFF9295A1), fontSize = 10.sp, maxLines = 1)
+                        if (clip.reason.isNotBlank()) Text(clip.reason, color = Color(0xFFB5B7C1), fontSize = 9.sp, maxLines = 2)
                     }
                     Button(onClick = { selectedIndex = index; player.seekTo(0); player.play() }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF343044))) {
                         androidx.compose.material3.Icon(Icons.Default.PlayArrow, contentDescription = null)
