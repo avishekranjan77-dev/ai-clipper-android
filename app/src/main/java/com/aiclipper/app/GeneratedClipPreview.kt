@@ -145,7 +145,7 @@ fun GeneratedClipReviewPanel(
                     }
                     Button(
                         onClick = {
-                            player.pause()
+                            if (index == selectedIndex) player.pause()
                             clip.file.delete()
                             reviewClips = reviewClips.filterNot { it.file == clip.file }
                             onClipsChanged(reviewClips)
@@ -167,6 +167,7 @@ fun GeneratedClipReviewPanel(
                     Button(
                         onClick = {
                             if (busy) return@Button
+                            if (index == selectedIndex) player.pause()
                             if (!ensureLegacyGalleryPermission(context)) {
                                 onError("Allow storage access for Gallery export, then tap Save again.")
                                 return@Button
@@ -178,7 +179,14 @@ fun GeneratedClipReviewPanel(
                                     clip.file.delete()
                                     reviewClips = reviewClips.filterNot { it.file == clip.file }
                                     onClipsChanged(reviewClips)
-                                    selectedIndex = selectedIndex.coerceAtMost((reviewClips.size - 1).coerceAtLeast(0))
+                                    if (editingIndex == index) editingIndex = -1
+                                    else if (editingIndex > index) editingIndex--
+                                    selectedIndex = when {
+                                        reviewClips.isEmpty() -> 0
+                                        index < selectedIndex -> selectedIndex - 1
+                                        index == selectedIndex -> selectedIndex.coerceAtMost(reviewClips.lastIndex)
+                                        else -> selectedIndex
+                                    }
                                     savedCount++
                                     onSaved(1)
                                 } catch (error: Exception) { onError(error.localizedMessage ?: "Could not save clip") }
@@ -194,6 +202,7 @@ fun GeneratedClipReviewPanel(
         Button(
             onClick = {
                 if (busy) return@Button
+                player.pause()
                 if (!ensureLegacyGalleryPermission(context)) {
                     onError("Allow storage access for Gallery export, then tap Download all again.")
                     return@Button
