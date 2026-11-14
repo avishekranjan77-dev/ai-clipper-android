@@ -158,7 +158,7 @@ object SemanticHighlightEngine {
                     onProgress(0.08f)
                     val candidates = mutableListOf<SemanticHighlight>()
                     windows.forEachIndexed { index, window ->
-                        onStage("Understanding conversation \${index + 1} of \${windows.size}…")
+                        onStage("Understanding conversation ${index + 1} of ${windows.size}…")
                         val conversation = engine.createConversation(
                             ConversationConfig(
                                 systemInstruction = Contents.of(
@@ -222,7 +222,7 @@ object SemanticHighlightEngine {
                     conversation.sendMessageAsync(
                         "Compare these candidate moments from the complete source video. Select the strongest and most varied moments. " +
                             "Do not select overlapping ranges or repeated versions of the same point. " +
-                            "Return up to \${pool.size} items in ranked order with original integer id and revised score 0-100. " +
+                            "Return up to ${pool.size} items in ranked order with original integer id and revised score 0-100. " +
                             "Do not invent ids. JSON only: {\"ranked\":[{\"id\":0,\"score\":95}]}\n\nCANDIDATES:\n$options\n\n/no_think"
                     ).collect { message -> append(message.toString()) }
                 }
@@ -274,7 +274,7 @@ object SemanticHighlightEngine {
     ): String {
         val transcript = window.cues.joinToString("\n") {
             "[${it.startMs}-${it.endMs}] ${it.text.replace("\n", " ").take(180)}"
-        }.take(15_000)
+        }.take(9_000)
         val sceneCount = scenes.count { it in window.startMs..window.endMs }
         val faceCount = faces.count { it in window.startMs..window.endMs }
         val speakerCount = speakers.filter { it.endMs > window.startMs && it.startMs < window.endMs }
