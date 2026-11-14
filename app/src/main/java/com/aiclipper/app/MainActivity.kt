@@ -765,7 +765,7 @@ private suspend fun exportVideo(
             val mediaItem = MediaItem.Builder().setUri(source).setClippingConfiguration(clipping).build()
             val videoEffects = mutableListOf<androidx.media3.common.Effect>()
             if (portrait) {
-                if (faceTrack.isNotEmpty()) videoEffects.add(createFaceTrackingEffect(faceTrack, startMs, outputAspect))
+                if (faceTrack.isNotEmpty()) videoEffects.add(createFaceTrackingEffect(faceTrack, startMs))
                 if (portrait) videoEffects.add(Presentation.createForWidthAndHeight(1080, 1920, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
             }
             val clipCues = speechCaptions.filter { it.endMs > startMs && it.startMs < endMs }.map {
