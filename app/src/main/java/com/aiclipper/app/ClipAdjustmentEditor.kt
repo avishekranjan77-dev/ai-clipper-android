@@ -57,6 +57,7 @@ fun ClipAdjustmentEditor(clip: GeneratedClip, onCancel: () -> Unit, onRendered: 
         previewPlayer.playWhenReady = false
     }
     var zoom by remember(clip.file.absolutePath) { mutableFloatStateOf(1f) }
+    var selectedAspect by remember(clip.file.absolutePath) { mutableStateOf(clip.aspectRatio) }
     var horizontal by remember(clip.file.absolutePath) { mutableFloatStateOf(0f) }
     var vertical by remember(clip.file.absolutePath) { mutableFloatStateOf(0f) }
     var trimStart by remember(clip.file.absolutePath) { mutableFloatStateOf(0f) }
@@ -65,7 +66,12 @@ fun ClipAdjustmentEditor(clip: GeneratedClip, onCancel: () -> Unit, onRendered: 
     val duration = clip.durationMs.coerceAtLeast(1L)
     Column(Modifier.fillMaxWidth().background(Color(0xFF20222A), RoundedCornerShape(14.dp)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Text("ADJUST CLIP", color = Color.White, fontSize = 13.sp)
-        Text("Drag the preview to reposition the crop. Use zoom to tighten or widen the frame.", color = Color(0xFF9295A1), fontSize = 10.sp)
+        Text("Set the output frame, then drag the preview or use the controls. The new framing is applied when you re-render.", color = Color(0xFF9295A1), fontSize = 10.sp)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            listOf("9:16", "1:1", "16:9", "Original").forEach { aspect ->
+                Button(onClick = { selectedAspect = aspect }, modifier = Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 2.dp, vertical = 7.dp), colors = ButtonDefaults.buttonColors(containerColor = if (selectedAspect == aspect) Color(0xFF8B7CFF) else Color(0xFF343640))) { Text(aspect, fontSize = 10.sp) }
+            }
+        }
         Box(
             Modifier.fillMaxWidth().height(230.dp).background(Color.Black, RoundedCornerShape(10.dp))
                 .border(1.dp, Color(0xFF8B7CFF), RoundedCornerShape(10.dp))
@@ -98,7 +104,7 @@ fun ClipAdjustmentEditor(clip: GeneratedClip, onCancel: () -> Unit, onRendered: 
             Button(onClick = {
                 if (!rendering) {
                     rendering = true
-                    renderAdjustedClip(context, clip, zoom, horizontal, vertical, trimStart, trimEnd,
+                    renderAdjustedClip(context, clip, zoom, horizontal, vertical, trimStart, trimEnd, selectedAspect,
                         onComplete = { result -> rendering = false; onRendered(result) },
                         onFailure = { message -> rendering = false; onError(message) })
                 }
@@ -110,7 +116,7 @@ fun ClipAdjustmentEditor(clip: GeneratedClip, onCancel: () -> Unit, onRendered: 
 }
 
 @androidx.annotation.OptIn(UnstableApi::class)
-private fun renderAdjustedClip(context: Context, clip: GeneratedClip, zoom: Float, horizontal: Float, vertical: Float, trimStart: Float, trimEnd: Float, onComplete: (GeneratedClip) -> Unit, onFailure: (String) -> Unit) {
+private fun renderAdjustedClip(context: Context, clip: GeneratedClip, zoom: Float, horizontal: Float, vertical: Float, trimStart: Float, trimEnd: Float, outputAspect: String, onComplete: (GeneratedClip) -> Unit, onFailure: (String) -> Unit) {
     val source = clip.file
     if (!source.exists()) { onFailure("The original clip file is no longer available."); return }
     val duration = clip.durationMs.coerceAtLeast(1L)
@@ -119,13 +125,21 @@ private fun renderAdjustedClip(context: Context, clip: GeneratedClip, zoom: Floa
     val output = File(context.filesDir, "adjusted_clip_${System.currentTimeMillis()}.mp4")
     val clipping = MediaItem.ClippingConfiguration.Builder().setStartPositionMs(start).setEndPositionMs(end).build()
     val item = MediaItem.Builder().setUri(android.net.Uri.fromFile(source)).setClippingConfiguration(clipping).build()
-    val framing = MatrixTransformation { Matrix().apply { postScale(zoom, zoom); postTranslate(horizontal * 0.55f, vertical * 0.55f) } }
-    val effects = Effects(emptyList(), listOf(Presentation.createForWidthAndHeight(1080, 1920, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP), framing))
+    val framing = MatrixTransformation { Matrix().apply { postScale(zoom, zoom); postTranslate(horizontal * 540f, vertical * 960f) } }
+    val videoEffects = mutableListOf<androidx.media3.common.Effect>()
+    when (outputAspect) {
+        "9:16" -> videoEffects.add(Presentation.createForWidthAndHeight(1080, 1920, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+        "1:1" -> videoEffects.add(Presentation.createForWidthAndHeight(1080, 1080, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+        "16:9" -> videoEffects.add(Presentation.createForWidthAndHeight(1920, 1080, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+        // Original retains the clip's existing dimensions.
+    }
+    videoEffects.add(framing)
+    val effects = Effects(emptyList(), videoEffects)
     val edited = EditedMediaItem.Builder(item).setEffects(effects).build()
     val completed = AtomicBoolean(false)
     val transformer = Transformer.Builder(context).addListener(object : Transformer.Listener {
         override fun onCompleted(composition: androidx.media3.transformer.Composition, exportResult: ExportResult) {
-            if (completed.compareAndSet(false, true)) onComplete(GeneratedClip(output, clip.startMs + start, clip.startMs + end))
+            if (completed.compareAndSet(false, true)) onComplete(GeneratedClip(output, clip.startMs + start, clip.startMs + end, outputAspect))
         }
         override fun onError(composition: androidx.media3.transformer.Composition, exportResult: ExportResult, exportException: ExportException) {
             if (completed.compareAndSet(false, true)) { output.delete(); onFailure("Adjustment render failed: ${exportException.localizedMessage ?: "unknown error"}") }
