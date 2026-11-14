@@ -113,6 +113,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@UnstableApi
 @Composable
 private fun ClipperHome(context: Context) {
     var selectedVideo by remember { mutableStateOf<Uri?>(null) }
