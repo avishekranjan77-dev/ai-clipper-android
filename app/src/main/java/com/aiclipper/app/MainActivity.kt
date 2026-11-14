@@ -274,6 +274,30 @@ private fun ClipperHome(context: Context) {
                         Spacer(Modifier.height(6.dp))
                         Text("Face tracking data ready • Portrait export will follow the detected subject.", color = Green, fontSize = 11.sp)
                     }
+                    if (facePicks.isNotEmpty()) {
+                        Button(
+                            onClick = {
+                                val uri = selectedVideo ?: return@Button
+                                exporting = true
+                                status = "Creating ${facePicks.size} AI-selected clips…"
+                                scope.launch {
+                                    exportSuggestedClips(
+                                        context, uri, facePicks, durationMs, faceTrack, captionText,
+                                        onProgress = { exportProgress = it },
+                                        onComplete = { message -> exporting = false; status = message },
+                                        onError = { message -> exporting = false; status = message }
+                                    )
+                                }
+                            },
+                            enabled = !exporting,
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = null)
+                            Spacer(Modifier.size(6.dp))
+                            Text("Create all ${facePicks.size} AI clips")
+                        }
+                    }
                     facePicks.forEachIndexed { index, time ->
                         Button(
                             onClick = {
@@ -411,7 +435,7 @@ private fun analyseFaces(context: Context, uri: Uri, durationMs: Long): FaceScan
     val picks = mutableListOf<Long>()
     for ((time, score) in scored.sortedByDescending { it.second }) {
         if (score < 2.2) continue
-        if (picks.none { kotlin.math.abs(it - time) < 12000L }) picks.add(time)
+        if (picks.none { kotlin.math.abs(it - time) < 30000L }) picks.add(time)
         if (picks.size >= 6) break
     }
     return FaceScanResult(points, picks.sorted())
@@ -541,6 +565,73 @@ private suspend fun exportVideo(
             onError("Could not start export: ${error.localizedMessage ?: "unknown error"}")
         }
     }
+}
+
+private suspend fun exportSuggestedClips(
+    context: Context,
+    source: Uri,
+    moments: List<Long>,
+    durationMs: Long,
+    faceTrack: List<FaceTrackPoint>,
+    caption: String,
+    onProgress: (Float) -> Unit,
+    onComplete: (String) -> Unit,
+    onError: (String) -> Unit
+) = withContext(Dispatchers.Main) {
+    val clips = moments.distinct().sorted().map { moment ->
+        val start = (moment - 10000L).coerceAtLeast(0L)
+        val end = (start + 30000L).coerceAtMost(durationMs)
+        start to end
+    }.filter { it.second - it.first >= 3000L }
+    if (clips.isEmpty()) {
+        onError("No usable AI clip ranges were found.")
+        return@withContext
+    }
+    var index = 0
+    fun exportNext() {
+        if (index >= clips.size) {
+            onProgress(1f)
+            onComplete("${clips.size} AI clips saved to your Gallery.")
+            return
+        }
+        val (startMs, endMs) = clips[index]
+        val output = File(context.cacheDir, "ai_clip_${System.currentTimeMillis()}_${index}.mp4")
+        val clipping = MediaItem.ClippingConfiguration.Builder()
+            .setStartPositionMs(startMs)
+            .setEndPositionMs(endMs)
+            .build()
+        val item = MediaItem.Builder().setUri(source).setClippingConfiguration(clipping).build()
+        val videoEffects = mutableListOf<androidx.media3.common.Effect>()
+        if (faceTrack.isNotEmpty()) videoEffects.add(createFaceTrackingEffect(faceTrack, startMs))
+        videoEffects.add(Presentation.createForWidthAndHeight(1080, 1920, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
+        if (caption.isNotBlank()) {
+            val styled = SpannableString(caption.trim()).apply {
+                setSpan(ForegroundColorSpan(android.graphics.Color.WHITE), 0, length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            videoEffects.add(OverlayEffect(listOf(TextOverlay.createStaticTextOverlay(styled))))
+        }
+        val edited = EditedMediaItem.Builder(item).setEffects(Effects(emptyList(), videoEffects)).build()
+        val transformer = Transformer.Builder(context).addListener(object : Transformer.Listener {
+            override fun onCompleted(composition: androidx.media3.transformer.Composition, exportResult: ExportResult) {
+                try {
+                    if (!copyToGallery(context, output)) throw IllegalStateException("Gallery rejected the exported clip")
+                    output.delete()
+                    index++
+                    onProgress(index.toFloat() / clips.size)
+                    exportNext()
+                } catch (error: Exception) {
+                    output.delete()
+                    onError("Clip ${index + 1} could not be saved: ${error.localizedMessage ?: "unknown error"}")
+                }
+            }
+            override fun onError(composition: androidx.media3.transformer.Composition, exportResult: ExportResult, exportException: ExportException) {
+                output.delete()
+                onError("Clip ${index + 1} export failed: ${exportException.localizedMessage ?: "unknown error"}")
+            }
+        }).build()
+        transformer.start(edited, output.absolutePath)
+    }
+    exportNext()
 }
 
 private fun copyToGallery(context: Context, source: File): Boolean {
