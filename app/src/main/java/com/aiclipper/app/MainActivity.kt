@@ -538,6 +538,7 @@ private fun ClipperHome(context: Context) {
                         context,
                         generatedClips,
                         onSaved = { count -> status = "Clips saved to Gallery." },
+                        onClipsChanged = { updated -> generatedClips = updated },
                         onError = { message -> status = message }
                     )
                 }
