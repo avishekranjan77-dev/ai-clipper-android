@@ -3,7 +3,12 @@ package com.aiclipper.app
 import android.content.Context
 import android.graphics.Matrix
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.fillMaxWidth
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,17 +19,23 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.MatrixTransformation
 import androidx.media3.effect.Presentation
@@ -39,6 +50,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 @Composable
 fun ClipAdjustmentEditor(clip: GeneratedClip, onCancel: () -> Unit, onRendered: (GeneratedClip) -> Unit, onError: (String) -> Unit) {
     val context = LocalContext.current
+    val previewPlayer = remember(clip.file.absolutePath) { ExoPlayer.Builder(context).build() }
+    DisposableEffect(previewPlayer) { onDispose { previewPlayer.release() } }
+    LaunchedEffect(clip.file.absolutePath) {
+        previewPlayer.setMediaItem(MediaItem.fromUri(android.net.Uri.fromFile(clip.file)))
+        previewPlayer.prepare()
+        previewPlayer.playWhenReady = false
+    }
     var zoom by remember(clip.file.absolutePath) { mutableFloatStateOf(1f) }
     var horizontal by remember(clip.file.absolutePath) { mutableFloatStateOf(0f) }
     var vertical by remember(clip.file.absolutePath) { mutableFloatStateOf(0f) }
@@ -48,6 +66,24 @@ fun ClipAdjustmentEditor(clip: GeneratedClip, onCancel: () -> Unit, onRendered: 
     val duration = clip.durationMs.coerceAtLeast(1L)
     Column(Modifier.fillMaxWidth().background(Color(0xFF20222A), RoundedCornerShape(14.dp)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
         Text("ADJUST CLIP", color = Color.White, fontSize = 13.sp)
+        Text("Drag the preview to reposition the crop. Use zoom to tighten or widen the frame.", color = Color(0xFF9295A1), fontSize = 10.sp)
+        Box(
+            Modifier.fillMaxWidth().height(230.dp).background(Color.Black, RoundedCornerShape(10.dp))
+                .border(1.dp, Color(0xFF8B7CFF), RoundedCornerShape(10.dp))
+                .pointerInput(zoom) {
+                    detectDragGestures { change, drag ->
+                        change.consume()
+                        horizontal = (horizontal + drag.x / size.width * 2f / zoom).coerceIn(-1f, 1f)
+                        vertical = (vertical + drag.y / size.height * 2f / zoom).coerceIn(-1f, 1f)
+                    }
+                }
+        ) {
+            AndroidView(
+                factory = { PlayerView(it).apply { player = previewPlayer; useController = true } },
+                update = { it.player = previewPlayer },
+                modifier = Modifier.fillMaxWidth().height(230.dp)
+            )
+        }
         Text("Zoom  ${"%.2f".format(zoom)}×", color = Color.White, fontSize = 12.sp)
         Slider(value = zoom, onValueChange = { zoom = it }, valueRange = 1f..2.5f)
         Text("Horizontal framing", color = Color.White, fontSize = 12.sp)
