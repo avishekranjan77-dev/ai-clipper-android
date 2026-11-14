@@ -221,7 +221,7 @@ private fun ClipperHome(context: Context) {
                 Spacer(Modifier.height(8.dp))
                 BasicTextField(
                     value = videoLink,
-                    onValueChange = { videoLink = it.take(2048) },
+                    onValueChange = { if (!processing) videoLink = it.take(2048) },
                     modifier = Modifier.fillMaxWidth().background(Color(0xFF22242C), RoundedCornerShape(10.dp)).padding(12.dp),
                     textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 13.sp),
                     singleLine = true,
@@ -270,6 +270,7 @@ private fun ClipperHome(context: Context) {
                             }
                         }
                     },
+                    enabled = !processing && !semanticBusy,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF292B34))
                 ) { Text("Use video link") }
@@ -585,6 +586,7 @@ private fun ClipperHome(context: Context) {
 
             Button(
                 onClick = { videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)) },
+                enabled = !processing && !semanticBusy,
                 modifier = Modifier.fillMaxWidth().height(50.dp),
                 shape = RoundedCornerShape(15.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF292B34))
