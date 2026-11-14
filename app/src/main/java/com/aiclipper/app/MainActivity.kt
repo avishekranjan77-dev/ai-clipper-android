@@ -384,7 +384,7 @@ private fun ClipperHome(context: Context) {
                                 status = "Creating ${chosenMoments.size} clips…"
                                 scope.launch {
                                     exportSuggestedClips(
-                                        context, uri, chosenMoments, durationMs, faceTrack, faceLayouts, twoPersonSplitScreen, captionText, speechCaptions,
+                                        context, uri, chosenMoments, durationMs, faceTrack, faceLayouts, twoPersonSplitScreen, speakerTurns, captionText, speechCaptions,
                                         onProgress = { exportProgress = it },
                                         onComplete = { message -> exporting = false; status = message },
                                         onError = { message -> exporting = false; status = message }
@@ -827,6 +827,7 @@ private suspend fun exportSuggestedClips(
     faceTrack: List<FaceTrackPoint>,
     faceLayouts: List<FaceLayoutSample>,
     twoPersonSplitScreen: Boolean,
+    speakerTurns: List<SpeakerTurn>,
     caption: String,
     speechCaptions: List<CaptionCue>,
     onProgress: (Float) -> Unit,
