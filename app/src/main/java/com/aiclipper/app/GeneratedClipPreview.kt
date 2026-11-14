@@ -57,7 +57,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
 
-data class GeneratedClip(val file: File, val startMs: Long, val endMs: Long, val aspectRatio: String = "9:16", val title: String = "AI highlight", val reason: String = "", val score: Int = 0) {
+data class GeneratedClip(val file: File, val startMs: Long, val endMs: Long, val aspectRatio: String = "9:16", val title: String = "AI highlight", val reason: String = "", val score: Int = 0, val sourceName: String = "") {
     val durationMs: Long get() = endMs - startMs
 }
 
@@ -131,6 +131,7 @@ fun GeneratedClipReviewPanel(
                 Row(Modifier.fillMaxWidth().background(if (index == selectedIndex) Color(0xFF29263F) else Color(0xFF22242C), RoundedCornerShape(10.dp)).padding(9.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                     Column(Modifier.weight(1f)) {
                         Text(clip.title, color = Color.White, fontSize = 12.sp, maxLines = 1)
+                        if (clip.sourceName.isNotBlank()) Text(clip.sourceName, color = Color(0xFFB5B7C1), fontSize = 9.sp, maxLines = 1)
                         Text("Clip ${index + 1} • ${clip.durationMs / 1000}s • AI score ${clip.score}", color = Color(0xFF9295A1), fontSize = 10.sp, maxLines = 1)
                         if (clip.reason.isNotBlank()) Text(clip.reason, color = Color(0xFFB5B7C1), fontSize = 9.sp, maxLines = 2)
                     }
