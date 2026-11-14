@@ -432,14 +432,22 @@ private fun ClipperHome(context: Context) {
                                         processingProgress = 0.18f
 
                                         status = "Tracking faces and scene changes…"
-                                        val faceResult = withContext(Dispatchers.Default) {
-                                            analyseFaces(context, uri, durationMs)
+                                        val faceResult = try {
+                                            withContext(Dispatchers.Default) {
+                                                analyseFaces(context, uri, durationMs)
+                                            }
+                                        } catch (_: Exception) {
+                                            FaceScanResult(emptyList(), emptyList(), emptyList())
                                         }
                                         faceTrack = faceResult.track
                                         faceLayouts = faceResult.layouts
                                         facePicks = faceResult.picks
-                                        scenePicks = withContext(Dispatchers.Default) {
-                                            findScenePicks(context, uri, durationMs)
+                                        scenePicks = try {
+                                            withContext(Dispatchers.Default) {
+                                                findScenePicks(context, uri, durationMs)
+                                            }
+                                        } catch (_: Exception) {
+                                            emptyList()
                                         }
                                         processingProgress = 0.38f
 
