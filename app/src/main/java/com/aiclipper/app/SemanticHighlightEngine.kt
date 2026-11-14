@@ -39,6 +39,7 @@ object SemanticHighlightEngine {
     private const val MODEL_FILE = "qwen3_0_6b.litertlm"
     private const val MODEL_URL = "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm?download=true"
     private const val MIN_MODEL_BYTES = 500L * 1024L * 1024L
+    private const val EXPECTED_MODEL_BYTES = 586L * 1024L * 1024L
     private const val MIN_CLIP_MS = 60_000L
     private const val MAX_CLIP_MS = 180_000L
     private const val WINDOW_MS = 180_000L
@@ -62,6 +63,7 @@ object SemanticHighlightEngine {
         }
         val partial = File(context.filesDir, "$MODEL_FILE.download")
         partial.delete()
+        onProgress(0f)
         val connection = (URL(MODEL_URL).openConnection() as HttpURLConnection).apply {
             connectTimeout = 20_000
             readTimeout = 120_000
@@ -89,8 +91,8 @@ object SemanticHighlightEngine {
                         output.write(buffer, 0, count)
                         copied += count
                         val now = System.currentTimeMillis()
-                        if (total > 0L && (now - lastProgressAt >= 400L || copied == total)) {
-                            onProgress((copied.toFloat() / total).coerceIn(0f, 1f))
+                        if (now - lastProgressAt >= 400L || copied >= progressTotal) {
+                            onProgress((copied.toFloat() / progressTotal.toFloat()).coerceIn(0f, 0.98f))
                             lastProgressAt = now
                         }
                     }
