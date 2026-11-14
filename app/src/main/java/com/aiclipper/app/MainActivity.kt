@@ -315,7 +315,7 @@ private fun ClipperHome(context: Context) {
                         valueRange = 60f..180f,
                         steps = 3
                     )
-                    Text("Clips remain at least 60 seconds long. The AI selects meaningful moments up to this limit.", color = Muted, fontSize = 10.sp)
+                    Text("Clips remain at least 60 seconds long. The source duration limits how many non-overlapping clips can fit at this length.", color = Muted, fontSize = 10.sp)
 
                     Text("OPTIONAL AI HIGHLIGHT FOCUS", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                     BasicTextField(
