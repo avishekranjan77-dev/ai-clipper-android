@@ -38,6 +38,12 @@ object ClipIntelligence {
                 candidates.add((latestMoment * ((index + 0.5) / samples.toDouble())).toLong())
             }
         }
+        if (candidates.size < target * 2) {
+            val samples = (target * 4).coerceAtLeast(4)
+            repeat(samples) { index ->
+                candidates.add((latestMoment * ((index + 0.5) / samples.toDouble())).toLong())
+            }
+        }
         if (candidates.isEmpty()) candidates.add(latestMoment / 2L)
 
         val hooks = listOf(
