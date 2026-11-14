@@ -38,7 +38,10 @@ object SpeechCaptionEngine {
 
     fun isModelInstalled(context: Context): Boolean {
         val modelDir = File(context.filesDir, MODEL_NAME)
-        return File(modelDir, "conf/model.conf").isFile
+        val requiredFiles = listOf("conf/model.conf", "am/final.mdl", "graph/words.txt")
+        return requiredFiles.all { relative ->
+            File(modelDir, relative).let { it.isFile && it.length() > 0L }
+        }
     }
 
     fun isSpeakerModelInstalled(context: Context): Boolean {
@@ -232,6 +235,7 @@ object SpeechCaptionEngine {
                         val outFormat = codec.outputFormat
                         sampleRate = outFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
                         channels = outFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                        phase = 0L
                     }
                     outputIndex >= 0 -> {
                         if (info.size > 0) {
@@ -253,8 +257,9 @@ object SpeechCaptionEngine {
                                 bucket.sampleCount++
                                 frameIndex++
                                 phase += TARGET_RATE.toLong()
-                                if (phase >= sampleRate.toLong()) {
-                                    phase -= sampleRate.toLong()
+                                val safeRate = sampleRate.toLong().coerceAtLeast(1L)
+                                while (phase >= safeRate) {
+                                    phase -= safeRate
                                     mono16k.write(mono and 0xff)
                                     mono16k.write((mono shr 8) and 0xff)
                                 }
