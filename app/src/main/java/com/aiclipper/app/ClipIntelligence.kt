@@ -89,6 +89,23 @@ object ClipIntelligence {
             }
             if (!overlaps) selected.add(moment)
         }
+        // Fill remaining slots with evenly distributed, non-overlapping fallback moments.
+        if (selected.size < target) {
+            for (index in 0 until target) {
+                if (selected.size >= target) break
+                val fallbackStart = if (target == 1) {
+                    (durationMs - MIN_SHORT_DURATION_MS) / 2L
+                } else {
+                    ((durationMs - MIN_SHORT_DURATION_MS) * index.toLong() / (target - 1).toLong())
+                }
+                val fallbackMoment = (fallbackStart + LEAD_IN_MS).coerceAtMost(latestMoment)
+                val overlaps = selected.any { existing ->
+                    val existingStart = (existing - LEAD_IN_MS).coerceAtLeast(0L)
+                    kotlin.math.abs(existingStart - fallbackStart) < MIN_SHORT_DURATION_MS
+                }
+                if (!overlaps) selected.add(fallbackMoment)
+            }
+        }
         return selected.sorted().take(target)
     }
 
