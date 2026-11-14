@@ -78,4 +78,16 @@ class ClipIntelligenceTest {
         assertTrue(ranges.zipWithNext().all { (a, b) -> a.endMs <= b.startMs })
     }
 
+
+    @Test fun fallbackRangesRespectThreeMinuteMaximumWhenRequested() {
+        val ranges = ClipIntelligence.buildExportRanges(
+            moments = listOf(90_000L, 270_000L, 450_000L),
+            durationMs = 600_000L,
+            clipDurationMs = 180_000L
+        )
+        assertTrue(ranges.isNotEmpty())
+        assertTrue(ranges.all { it.durationMs == 180_000L })
+        assertTrue(ranges.all { it.endMs <= 600_000L })
+    }
+
 }
