@@ -170,7 +170,7 @@ fun GeneratedClipReviewPanel(
                     try {
                         withContext(Dispatchers.IO) {
                             reviewClips.filter { it.file.exists() }.forEach { clip ->
-                                saveGeneratedClip(context, clip.file)
+                                saveGeneratedClip(context, clip)
                                 clip.file.delete()
                                 count++
                             }
