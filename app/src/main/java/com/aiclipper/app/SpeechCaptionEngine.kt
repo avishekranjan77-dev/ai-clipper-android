@@ -42,7 +42,7 @@ object SpeechCaptionEngine {
 
     fun isModelInstalled(context: Context): Boolean {
         val modelDir = File(context.filesDir, MODEL_NAME)
-        val requiredFiles = listOf("conf/model.conf", "am/final.mdl", "graph/words.txt")
+        val requiredFiles = listOf("conf/model.conf", "conf/mfcc.conf", "am/final.mdl", "graph/HCLr.fst", "graph/Gr.fst", "graph/words.txt")
         return requiredFiles.all { relative ->
             File(modelDir, relative).let { it.isFile && it.length() > 0L }
         }
