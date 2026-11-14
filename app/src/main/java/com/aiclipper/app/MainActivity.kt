@@ -250,6 +250,9 @@ private fun ClipperHome(context: Context) {
                                     generatedClips.forEach { it.file.delete() }
                                     generatedClips = emptyList()
                                     semanticHighlights = emptyList()
+                                    durationMs = 0L
+                                    startMs = 0L
+                                    endMs = 0L
                                     selectedVideo = Uri.fromFile(localFile)
                                     selectedVideoName = localFile.name
                                     speechCaptions = emptyList()
