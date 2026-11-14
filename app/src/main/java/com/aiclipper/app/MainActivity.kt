@@ -111,6 +111,8 @@ class MainActivity : ComponentActivity() {
 private fun ClipperHome(context: Context) {
     var selectedVideo by remember { mutableStateOf<Uri?>(null) }
     var selectedVideoName by remember { mutableStateOf<String?>(null) }
+    var videoLink by remember { mutableStateOf("") }
+    var requestedClipCount by remember { mutableFloatStateOf(10f) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var startMs by remember { mutableLongStateOf(0L) }
     var endMs by remember { mutableLongStateOf(0L) }
@@ -172,6 +174,48 @@ private fun ClipperHome(context: Context) {
                     Text("Your pocket video studio", color = Muted, fontSize = 13.sp)
                 }
                 Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Accent, modifier = Modifier.size(28.dp))
+            }
+
+            Column(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(16.dp)) {
+                Text("IMPORT FROM LINK", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Spacer(Modifier.height(8.dp))
+                BasicTextField(
+                    value = videoLink,
+                    onValueChange = { videoLink = it.take(2048) },
+                    modifier = Modifier.fillMaxWidth().background(Color(0xFF22242C), RoundedCornerShape(10.dp)).padding(12.dp),
+                    textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 13.sp),
+                    singleLine = true,
+                    decorationBox = { inner ->
+                        if (videoLink.isEmpty()) Text("Paste a direct MP4 video URL…", color = Muted, fontSize = 13.sp)
+                        inner()
+                    }
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        val raw = videoLink.trim()
+                        val parsed = runCatching { Uri.parse(raw) }.getOrNull()
+                        val host = parsed?.host?.lowercase(Locale.US).orEmpty()
+                        if (parsed == null || parsed.scheme !in listOf("http", "https") || host.isBlank()) {
+                            status = "Enter a valid https:// video-file URL."
+                        } else if (host == "youtube.com" || host.endsWith(".youtube.com") || host == "youtu.be" || host.endsWith(".youtu.be")) {
+                            status = "YouTube links are recognised, but direct downloading is not supported. For videos you own, export/download the original from YouTube Studio, then import the file."
+                        } else if (!raw.substringBefore("?").lowercase(Locale.US).let { it.endsWith(".mp4") || it.endsWith(".m4v") || it.endsWith(".mov") || it.endsWith(".webm") }) {
+                            status = "This link does not look like a direct video file. Use a direct MP4, M4V, MOV or WebM URL."
+                        } else {
+                            selectedVideo = parsed
+                            selectedVideoName = parsed.lastPathSegment?.substringAfterLast('/') ?: "Linked video"
+                            speechCaptions = emptyList()
+                            faceTrack = emptyList()
+                            facePicks = emptyList()
+                            scenePicks = emptyList()
+                            status = "Linked video loaded. It will stream during preview/export; a stable internet connection is required."
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF292B34))
+                ) { Text("Use video link") }
+                Text("Direct video-file links only. YouTube pages cannot be downloaded by this app.", color = Muted, fontSize = 10.sp)
             }
 
             if (selectedVideo != null) {
@@ -277,15 +321,29 @@ private fun ClipperHome(context: Context) {
                         Spacer(Modifier.height(6.dp))
                         Text("Face tracking data ready • Portrait export will shift toward detected faces. Check the exported clip; unsupported framing falls back to centre crop.", color = Green, fontSize = 11.sp)
                     }
-                    if (facePicks.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                        Text("NUMBER OF CLIPS", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        Text("${requestedClipCount.toInt()} clips", color = Accent, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+                    Slider(
+                        value = requestedClipCount,
+                        onValueChange = { requestedClipCount = it },
+                        valueRange = 1f..30f,
+                        steps = 28
+                    )
+                    Text("Choose 1–30 clips. Face and scene moments are prioritised, then remaining slots use evenly spaced sections.", color = Muted, fontSize = 10.sp)
+                    val availableMoments = buildClipMoments(facePicks, scenePicks, durationMs, requestedClipCount.toInt())
+                    if (availableMoments.isNotEmpty()) {
                         Button(
                             onClick = {
                                 val uri = selectedVideo ?: return@Button
                                 exporting = true
-                                status = "Creating ${facePicks.size} AI-selected clips…"
+                                val chosenMoments = buildClipMoments(facePicks, scenePicks, durationMs, requestedClipCount.toInt())
+                                status = "Creating ${chosenMoments.size} clips…"
                                 scope.launch {
                                     exportSuggestedClips(
-                                        context, uri, facePicks, durationMs, faceTrack, captionText, speechCaptions,
+                                        context, uri, chosenMoments, durationMs, faceTrack, captionText, speechCaptions,
                                         onProgress = { exportProgress = it },
                                         onComplete = { message -> exporting = false; status = message },
                                         onError = { message -> exporting = false; status = message }
@@ -298,10 +356,10 @@ private fun ClipperHome(context: Context) {
                         ) {
                             Icon(Icons.Default.Download, contentDescription = null)
                             Spacer(Modifier.size(6.dp))
-                            Text("Create all ${facePicks.size} AI clips")
+                            Text("Create ${availableMoments.size} clips")
                         }
                     }
-                    facePicks.forEachIndexed { index, time ->
+                    availableMoments.take(6).forEachIndexed { index, time ->
                         Button(
                             onClick = {
                                 startMs = (time - 10000L).coerceAtLeast(0L)
@@ -432,6 +490,37 @@ private fun ClipperHome(context: Context) {
             Text("Free on-device editing • No account • No paid API", color = Muted, fontSize = 10.sp)
         }
     }
+}
+
+private fun buildClipMoments(
+    faceMoments: List<Long>,
+    sceneMoments: List<Long>,
+    durationMs: Long,
+    requestedCount: Int
+): List<Long> {
+    if (durationMs < 3000L || requestedCount <= 0) return emptyList()
+    val clipLengthMs = 30000L
+    val maxByDuration = (durationMs / clipLengthMs).toInt().coerceAtLeast(1)
+    val target = requestedCount.coerceIn(1, 30).coerceAtMost(maxByDuration)
+    val latestCenter = (durationMs - 15000L).coerceAtLeast(1500L)
+    val candidates = (faceMoments.map { it to 0 } + sceneMoments.map { it to 1 })
+        .filter { it.first in 1500L..latestCenter }
+        .sortedWith(compareBy<Pair<Long, Int>> { it.second }.thenBy { it.first })
+        .map { it.first }
+    val selected = mutableListOf<Long>()
+    fun addIfSpaced(time: Long) {
+        val clamped = time.coerceIn(1500L, latestCenter)
+        if (selected.size < target && selected.none { kotlin.math.abs(it - clamped) < clipLengthMs }) selected.add(clamped)
+    }
+    candidates.forEach(::addIfSpaced)
+    if (selected.size < target) {
+        for (i in 0 until target * 4) {
+            val fraction = (i + 0.5f) / (target * 4f)
+            addIfSpaced((1500L + ((latestCenter - 1500L) * fraction)).toLong())
+            if (selected.size >= target) break
+        }
+    }
+    return selected.sorted().take(target)
 }
 
 private fun Player.isReadyForDuration(): Boolean = playbackState == Player.STATE_READY && duration > 0
