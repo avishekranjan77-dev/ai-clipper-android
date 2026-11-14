@@ -141,6 +141,10 @@ private fun ClipperHome(context: Context) {
     var twoPersonSplitScreen by remember { mutableStateOf(true) }
     var captionStyle by remember { mutableStateOf(CaptionStyle.BOLD_POP) }
     var generatedClips by remember { mutableStateOf<List<GeneratedClip>>(emptyList()) }
+    var semanticModelReady by remember { mutableStateOf(SemanticHighlightEngine.isModelInstalled(context)) }
+    var semanticHighlights by remember { mutableStateOf<List<SemanticHighlight>>(emptyList()) }
+    var semanticBusy by remember { mutableStateOf(false) }
+    var semanticProgress by remember { mutableFloatStateOf(0f) }
     var scanningFaces by remember { mutableStateOf(false) }
     var hasAnalysedVideo by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -175,6 +179,7 @@ private fun ClipperHome(context: Context) {
         selectedVideo = uri
         generatedClips.forEach { it.file.delete() }
         generatedClips = emptyList()
+        semanticHighlights = emptyList()
         hasAnalysedVideo = false
         speechCaptions = emptyList()
         speakerTurns = emptyList()
@@ -233,6 +238,7 @@ private fun ClipperHome(context: Context) {
                                     val localFile = withContext(Dispatchers.IO) { downloadLinkedVideo(context, parsed) }
                                     generatedClips.forEach { it.file.delete() }
                                     generatedClips = emptyList()
+                                    semanticHighlights = emptyList()
                                     selectedVideo = Uri.fromFile(localFile)
                                     selectedVideoName = localFile.name
                                     speechCaptions = emptyList()
@@ -376,7 +382,7 @@ private fun ClipperHome(context: Context) {
                     Text(
                         when {
                             durationMs < MIN_SHORT_DURATION_MS -> "Shorts export needs at least 1 minute of source footage. This video is too short for a 60-second Short."
-                            hasAnalysedVideo -> "Choose 1–30 clips. Every AI Short is at least 60 seconds; transcript, audio activity, face and scene signals rank highlights."
+                            hasAnalysedVideo -> if (semanticHighlights.isNotEmpty()) "Language-model understanding is active. Every clip is 60–90 seconds, with transcript, speaker, face, scene and audio evidence combined." else "Choose 1–30 clips. Every AI Short is at least 60 seconds; transcript, audio activity, face and scene signals rank highlights."
                             else -> "Run Find moments or Track faces first to analyse this video."
                         },
                         color = if (durationMs < MIN_SHORT_DURATION_MS) Color(0xFFFFB86B) else Muted,
@@ -395,19 +401,20 @@ private fun ClipperHome(context: Context) {
                     }
                     Text("Captions shift to the upper or lower safe area when a detected face is nearby.", color = Muted, fontSize = 10.sp)
                     Spacer(Modifier.height(10.dp))
-                    val availableMoments = remember(facePicks, scenePicks, speechCaptions, audioEnergy, durationMs, requestedClipCount.toInt(), hasAnalysedVideo) { if (hasAnalysedVideo) buildClipMoments(facePicks, scenePicks, speechCaptions, audioEnergy, durationMs, requestedClipCount.toInt()) else emptyList() }
+                    val availableMoments = remember(facePicks, scenePicks, speechCaptions, audioEnergy, durationMs, requestedClipCount.toInt(), hasAnalysedVideo, semanticHighlights) { if (semanticHighlights.isNotEmpty()) semanticHighlights.take(requestedClipCount.toInt()).map { it.startMs + 20_000L } else if (hasAnalysedVideo) buildClipMoments(facePicks, scenePicks, speechCaptions, audioEnergy, durationMs, requestedClipCount.toInt()) else emptyList() }
                     if (availableMoments.isNotEmpty()) {
                         Button(
                             onClick = {
                                 val uri = selectedVideo ?: return@Button
                                 exporting = true
-                                val chosenMoments = buildClipMoments(facePicks, scenePicks, speechCaptions, audioEnergy, durationMs, requestedClipCount.toInt())
+                                val chosenMoments = if (semanticHighlights.isNotEmpty()) semanticHighlights.take(requestedClipCount.toInt()).map { it.startMs + 20_000L } else buildClipMoments(facePicks, scenePicks, speechCaptions, audioEnergy, durationMs, requestedClipCount.toInt())
+                                val chosenRanges = semanticHighlights.take(requestedClipCount.toInt()).map { ClipRange(it.startMs, it.endMs) }
                                 generatedClips.forEach { it.file.delete() }
                                 generatedClips = emptyList()
                                 status = "Creating ${chosenMoments.size} clip previews…"
                                 scope.launch {
                                     exportSuggestedClips(
-                                        context, uri, chosenMoments, durationMs, faceTrack, faceLayouts, twoPersonSplitScreen, speakerTurns, captionText, speechCaptions, captionStyle,
+                                        context, uri, chosenMoments, durationMs, faceTrack, faceLayouts, twoPersonSplitScreen, speakerTurns, captionText, speechCaptions, captionStyle, chosenRanges,
                                         onProgress = { exportProgress = it },
                                         onComplete = { clips -> generatedClips = clips; exporting = false; status = "${clips.size} previews are ready. Review them and download only the clips you want." },
                                         onError = { message -> exporting = false; status = message }
@@ -424,16 +431,17 @@ private fun ClipperHome(context: Context) {
                         }
                     }
                     availableMoments.take(6).forEachIndexed { index, time ->
+                        val semantic = semanticHighlights.getOrNull(index)
                         Button(
                             onClick = {
-                                startMs = (time - 20000L).coerceAtLeast(0L)
-                                endMs = (startMs + MIN_SHORT_DURATION_MS).coerceAtMost(durationMs)
+                                startMs = semantic?.startMs ?: (time - 20000L).coerceAtLeast(0L)
+                                endMs = semantic?.endMs ?: (startMs + MIN_SHORT_DURATION_MS).coerceAtMost(durationMs)
                                 player.seekTo(startMs)
-                                status = "Selected AI face moment ${index + 1}. Adjust trim if needed."
+                                status = semantic?.let { "Selected AI highlight: ${it.title}. ${it.reason}" } ?: "Selected visual highlight ${index + 1}. Adjust trim if needed."
                             },
                             modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF242236))
-                        ) { Text("Face moment ${index + 1}  •  ${formatTime(time)}", color = Color.White) }
+                        ) { Text(semantic?.let { "${index + 1}. ${it.title}  •  ${it.score}/100" } ?: "Visual moment ${index + 1}  •  ${formatTime(time)}", color = Color.White) }
                     }
                 }
                 if (generatedClips.isNotEmpty()) {
@@ -494,6 +502,8 @@ private fun ClipperHome(context: Context) {
                                     } else {
                                         val analysis = withContext(Dispatchers.IO) { SpeechCaptionEngine.transcribe(context, uri) {} }
                                         speechCaptions = analysis.captions
+                                         semanticHighlights = emptyList()
+                                         hasAnalysedVideo = analysis.captions.isNotEmpty() || hasAnalysedVideo
                                         audioEnergy = analysis.audioEnergy
                                         speakerTurns = analysis.speakerTurns
                                         val speakers = analysis.speakerTurns.map { it.speakerId }.distinct().size
@@ -524,6 +534,69 @@ private fun ClipperHome(context: Context) {
                     if (speakerTurns.isNotEmpty()) {
                         val detectedSpeakers = speakerTurns.map { it.speakerId }.distinct().sorted()
                         Text("Voice diarization: " + detectedSpeakers.joinToString(" • ") { "Speaker $it" } + "  |  " + speakerTurns.size + " turns", color = Green, fontSize = 11.sp)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Column(Modifier.fillMaxWidth().background(Color(0xFF20202A), RoundedCornerShape(14.dp)).padding(12.dp)) {
+                        Text("SEMANTIC HIGHLIGHT AI", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text(
+                            if (semanticModelReady) "Qwen3-0.6B is installed. It analyses what the conversation means, not just trigger words."
+                            else "Free on-device Qwen3 language model • one-time download (${SemanticHighlightEngine.MODEL_SIZE_LABEL}) • works offline afterwards.",
+                            color = Muted, fontSize = 10.sp
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                if (speechCaptions.isEmpty()) {
+                                    status = "Generate speech captions first so the language model has a timestamped transcript."
+                                } else {
+                                    semanticBusy = true
+                                    semanticProgress = 0f
+                                    status = if (semanticModelReady) "The on-device language model is understanding the conversation…" else "Downloading the free AI language model…"
+                                    scope.launch {
+                                        try {
+                                            if (!semanticModelReady) {
+                                                withContext(Dispatchers.IO) {
+                                                    SemanticHighlightEngine.downloadModel(context) { value ->
+                                                        scope.launch { semanticProgress = value }
+                                                    }
+                                                }
+                                                semanticModelReady = true
+                                                status = "AI model installed. Tap again to analyse the conversation."
+                                            } else {
+                                                val result = SemanticHighlightEngine.analyse(
+                                                    context, speechCaptions, durationMs, requestedClipCount.toInt(),
+                                                    facePicks, scenePicks, audioEnergy, speakerTurns
+                                                ) { value -> scope.launch { semanticProgress = value } }
+                                                semanticHighlights = result
+                                                hasAnalysedVideo = true
+                                                status = if (result.isEmpty()) "The language model found no valid 60–90 second moments. Signal-based suggestions remain available."
+                                                    else "Semantic AI found ${result.size} meaningful, non-overlapping highlights. Review them before exporting."
+                                            }
+                                        } catch (error: Exception) {
+                                            status = "Semantic AI could not complete: ${error.localizedMessage ?: "model/runtime error"}. Existing offline suggestions remain available."
+                                        } finally {
+                                            semanticBusy = false
+                                        }
+                                    }
+                                }
+                            },
+                            enabled = !semanticBusy && speechCaptions.isNotEmpty(),
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                        ) {
+                            if (semanticBusy) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Default.AutoAwesome, contentDescription = null)
+                            Spacer(Modifier.size(6.dp))
+                            Text(if (semanticBusy) "AI analysing…" else if (!semanticModelReady) "Download free AI model" else "Understand conversation with AI")
+                        }
+                        if (semanticBusy) {
+                            Spacer(Modifier.height(6.dp))
+                            androidx.compose.material3.LinearProgressIndicator(progress = { semanticProgress }, modifier = Modifier.fillMaxWidth(), color = Accent)
+                        }
+                        semanticHighlights.take(5).forEachIndexed { index, item ->
+                            Text("${index + 1}. ${item.title}  •  ${item.score}/100", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            Text(item.reason, color = Muted, fontSize = 10.sp)
+                        }
                     }
                     Text(
                         if (speechCaptions.isNotEmpty()) "Timed captions ready: " + speechCaptions.size + " lines • audio activity analysed"
