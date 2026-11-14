@@ -33,7 +33,8 @@ internal object ClipLibraryStore {
                         aspectRatio = item.optString("aspectRatio", "9:16"),
                         title = item.optString("title", "AI highlight"),
                         reason = item.optString("reason", ""),
-                        score = item.optInt("score", 0).coerceIn(0, 100)
+                        score = item.optInt("score", 0).coerceIn(0, 100),
+                        sourceName = item.optString("sourceName", "")
                     )
                 )
             }
@@ -52,6 +53,7 @@ internal object ClipLibraryStore {
                     put("title", clip.title)
                     put("reason", clip.reason)
                     put("score", clip.score)
+                    put("sourceName", clip.sourceName)
                 }
             )
         }
