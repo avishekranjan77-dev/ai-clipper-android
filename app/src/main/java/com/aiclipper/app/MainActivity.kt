@@ -348,13 +348,13 @@ private fun ClipperHome(context: Context) {
                         steps = 28
                     )
                     Text(if (hasAnalysedVideo) "Choose 1–30 clips. Face and scene moments are prioritised, then remaining slots use evenly spaced sections." else "Run Find moments or Track faces first to analyse this video.", color = Muted, fontSize = 10.sp)
-                    val availableMoments = if (hasAnalysedVideo) buildClipMoments(facePicks, scenePicks, durationMs, requestedClipCount.toInt()) else emptyList()
+                    val availableMoments = if (hasAnalysedVideo) buildClipMoments(facePicks, scenePicks, speechCaptions, durationMs, requestedClipCount.toInt()) else emptyList()
                     if (availableMoments.isNotEmpty()) {
                         Button(
                             onClick = {
                                 val uri = selectedVideo ?: return@Button
                                 exporting = true
-                                val chosenMoments = buildClipMoments(facePicks, scenePicks, durationMs, requestedClipCount.toInt())
+                                val chosenMoments = buildClipMoments(facePicks, scenePicks, speechCaptions, durationMs, requestedClipCount.toInt())
                                 status = "Creating ${chosenMoments.size} clips…"
                                 scope.launch {
                                     exportSuggestedClips(
@@ -510,6 +510,7 @@ private fun ClipperHome(context: Context) {
 private fun buildClipMoments(
     faceMoments: List<Long>,
     sceneMoments: List<Long>,
+    speechCaptions: List<CaptionCue>,
     durationMs: Long,
     requestedCount: Int
 ): List<Long> {
@@ -517,23 +518,56 @@ private fun buildClipMoments(
     val clipLengthMs = 30000L
     val maxByDuration = (durationMs / clipLengthMs).toInt().coerceAtLeast(1)
     val target = requestedCount.coerceIn(1, 30).coerceAtMost(maxByDuration)
-    val latestCenter = (durationMs - 15000L).coerceAtLeast(1500L)
-    val candidates = (faceMoments.map { it to 0 } + sceneMoments.map { it to 1 })
-        .filter { it.first in 1500L..latestCenter }
-        .sortedWith(compareBy<Pair<Long, Int>> { it.second }.thenBy { it.first })
-        .map { it.first }
-    val selected = mutableListOf<Long>()
-    fun addIfSpaced(time: Long) {
-        val clamped = time.coerceIn(1500L, latestCenter)
-        if (selected.size < target && selected.none { kotlin.math.abs(it - clamped) < clipLengthMs }) selected.add(clamped)
-    }
-    candidates.forEach(::addIfSpaced)
-    if (selected.size < target) {
+    val latestMoment = (durationMs - 20000L).coerceAtLeast(0L)
+
+    // Candidate windows are scored from transcript evidence plus independent visual signals.
+    val candidates = linkedSetOf<Long>()
+    faceMoments.forEach { candidates.add(it.coerceIn(0L, latestMoment)) }
+    sceneMoments.forEach { candidates.add(it.coerceIn(0L, latestMoment)) }
+    if (speechCaptions.isNotEmpty()) {
+        speechCaptions.forEach { cue ->
+            candidates.add(((cue.startMs + cue.endMs) / 2L).coerceIn(0L, latestMoment))
+        }
+        var t = 10000L
+        while (t <= latestMoment) {
+            candidates.add(t)
+            t += 5000L
+        }
+    } else {
         for (i in 0 until target * 4) {
             val fraction = (i + 0.5f) / (target * 4f)
-            addIfSpaced((1500L + ((latestCenter - 1500L) * fraction)).toLong())
-            if (selected.size >= target) break
+            candidates.add((latestMoment * fraction).toLong())
         }
+    }
+
+    val hookTerms = listOf(
+        "why", "how", "what if", "the truth", "secret", "mistake", "never",
+        "always", "because", "the reason", "actually", "imagine", "listen",
+        "wait", "look", "important", "remember", "best", "worst", "crazy",
+        "amazing", "problem", "solution", "first time", "nobody", "everyone"
+    )
+    fun score(moment: Long): Double {
+        val start = (moment - 10000L).coerceAtLeast(0L)
+        val end = (start + clipLengthMs).coerceAtMost(durationMs)
+        val cues = speechCaptions.filter { it.endMs > start && it.startMs < end }
+        val transcript = cues.joinToString(" ") { it.text.lowercase(Locale.US) }
+        val words = transcript.split(Regex("\\s+")).count { it.isNotBlank() }
+        val densityScore = (words / 55.0).coerceIn(0.0, 1.25) * 20.0
+        val hookScore = hookTerms.sumOf { term ->
+            if (Regex("\\b" + Regex.escape(term) + "\\b").containsMatchIn(transcript)) 4.0 else 0.0
+        }.coerceAtMost(24.0)
+        val continuityScore = (cues.size / 5.0).coerceIn(0.0, 1.0) * 8.0
+        val faceScore = if (faceMoments.any { kotlin.math.abs(it - moment) <= 12000L }) 12.0 else 0.0
+        val sceneScore = if (sceneMoments.any { kotlin.math.abs(it - moment) <= 10000L }) 7.0 else 0.0
+        val speechPenalty = if (speechCaptions.isNotEmpty() && words < 8) 18.0 else 0.0
+        return densityScore + hookScore + continuityScore + faceScore + sceneScore - speechPenalty
+    }
+
+    val ranked = candidates.map { it to score(it) }.sortedByDescending { it.second }
+    val selected = mutableListOf<Long>()
+    for ((moment, _) in ranked) {
+        if (selected.size >= target) break
+        if (selected.none { kotlin.math.abs(it - moment) < clipLengthMs }) selected.add(moment)
     }
     return selected.sorted().take(target)
 }
