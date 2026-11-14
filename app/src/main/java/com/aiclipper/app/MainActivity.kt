@@ -574,7 +574,7 @@ private fun analyseFaces(context: Context, uri: Uri, durationMs: Long): FaceScan
                         val weights = faces.map { face ->
                             kotlin.math.sqrt((face.boundingBox.width().toFloat() * face.boundingBox.height()).coerceAtLeast(1f))
                         }
-                        (faceCenters.indices.sumOf { i -> faceCenters[i] * weights[i] } / weights.sum()).toFloat()
+                        (faceCenters.indices.fold(0f) { total, i -> total + faceCenters[i] * weights[i] } / weights.sum())
                     } else {
                         selectedFace.boundingBox.centerX().toFloat() / sample.width
                     }.coerceIn(0.05f, 0.95f)
