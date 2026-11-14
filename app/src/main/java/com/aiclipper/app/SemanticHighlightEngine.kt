@@ -34,7 +34,7 @@ object SemanticHighlightEngine {
     private const val MODEL_URL = "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm?download=true"
     private const val MIN_MODEL_BYTES = 500L * 1024L * 1024L
     private const val MIN_CLIP_MS = 60_000L
-    private const val MAX_CLIP_MS = 90_000L
+    private const val MAX_CLIP_MS = 180_000L
     private const val WINDOW_MS = 120_000L
     private const val STEP_MS = 60_000L
 
@@ -121,11 +121,13 @@ object SemanticHighlightEngine {
         audioEnergy: List<AudioEnergyPoint>,
         speakerTurns: List<SpeakerTurn>,
         userPreference: String = "",
+        maxClipDurationMs: Long = 90_000L,
         onProgress: (Float) -> Unit = {}
     ): List<SemanticHighlight> = withContext(Dispatchers.IO) {
         require(isModelInstalled(context)) { "Download the free on-device AI highlight model first." }
         require(captions.isNotEmpty()) { "Generate speech captions before semantic highlight analysis." }
         require(durationMs >= MIN_CLIP_MS) { "The source video must be at least 60 seconds long." }
+        val clipMaximum = maxClipDurationMs.coerceIn(MIN_CLIP_MS, MAX_CLIP_MS)
 
         val windows = buildWindows(captions, durationMs)
         if (windows.isEmpty()) return@withContext emptyList()
@@ -152,11 +154,11 @@ object SemanticHighlightEngine {
                     )
                 )
                 val response = try {
-                    conversation.sendMessage(buildPrompt(window, faceMoments, sceneMoments, audioEnergy, speakerTurns, userPreference)).toString()
+                    conversation.sendMessage(buildPrompt(window, faceMoments, sceneMoments, audioEnergy, speakerTurns, userPreference, clipMaximum)).toString()
                 } finally {
                     conversation.close()
                 }
-                candidates.addAll(parseHighlights(response, window.startMs, window.endMs, captions))
+                candidates.addAll(parseHighlights(response, window.startMs, window.endMs, captions, clipMaximum))
                 onProgress((index + 1f) / (windows.size + 1f))
             }
             refinedCandidates = globallyRefine(engine, candidates)
@@ -235,7 +237,8 @@ object SemanticHighlightEngine {
         scenes: List<Long>,
         energy: List<AudioEnergyPoint>,
         speakers: List<SpeakerTurn>,
-        userPreference: String
+        userPreference: String,
+        maxClipDurationMs: Long
     ): String {
         val transcript = window.cues.joinToString("\n") {
             "[${it.startMs}-${it.endMs}] ${it.text.replace("\n", " ").take(180)}"
@@ -257,7 +260,7 @@ object SemanticHighlightEngine {
             $speakerCount distinct diarized speakers, audio RMS $energySummary.
 
             Select at most TWO genuinely interesting, self-contained moments from this window.
-            A selected moment must be at least 60,000 ms and at most 90,000 ms long.
+            A selected moment must be at least 60,000 ms and at most ${maxClipDurationMs} milliseconds long.
             Prefer a strong opening, a complete story or explanation, a surprising reveal, a funny exchange,
             a clear emotional reaction, a useful actionable insight, a compelling disagreement, or a question
             followed by a satisfying answer. Preserve enough setup and payoff to make sense without the full video.
@@ -280,7 +283,8 @@ object SemanticHighlightEngine {
         raw: String,
         windowStart: Long,
         windowEnd: Long,
-        captions: List<CaptionCue>
+        captions: List<CaptionCue>,
+        maxClipDurationMs: Long
     ): List<SemanticHighlight> {
         val fence = 96.toChar().toString().repeat(3)
         val cleaned = raw.substringAfter("</think>", raw).replace(fence + "json", "").replace(fence, "")
@@ -294,7 +298,7 @@ object SemanticHighlightEngine {
             val item = array.optJSONObject(i) ?: continue
             val start = item.optLong("start_ms", -1L)
             val end = item.optLong("end_ms", -1L)
-            if (start < windowStart || end > windowEnd || end - start !in MIN_CLIP_MS..MAX_CLIP_MS) continue
+            if (start < windowStart || end > windowEnd || end - start !in MIN_CLIP_MS..maxClipDurationMs) continue
             if (captions.count { it.endMs > start && it.startMs < end } < 8) continue
             val title = item.optString("title").trim().take(80).ifBlank { "AI-selected highlight" }
             val reason = item.optString("reason").trim().take(220).ifBlank { "A complete conversation moment selected by semantic analysis." }
