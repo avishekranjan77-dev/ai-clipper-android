@@ -96,6 +96,7 @@ private val Panel = Color(0xFF15171D)
 private val Accent = Color(0xFF8B7CFF)
 private val Muted = Color(0xFF9295A1)
 private val Green = Color(0xFF62D69A)
+private const val MIN_SHORT_DURATION_MS = 60_000L
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -574,7 +575,11 @@ private fun buildClipMoments(
     val selected = mutableListOf<Long>()
     for ((moment, _) in ranked) {
         if (selected.size >= target) break
-        if (selected.none { kotlin.math.abs(it - moment) < clipLengthMs }) selected.add(moment)
+        val proposedStart = (moment - leadInMs).coerceAtLeast(0L)
+        if (selected.none { existing ->
+                val existingStart = (existing - leadInMs).coerceAtLeast(0L)
+                kotlin.math.abs(existingStart - proposedStart) < clipLengthMs
+            }) selected.add(moment)
     }
     return selected.sorted().take(target)
 }
