@@ -272,7 +272,7 @@ private fun ClipperHome(context: Context) {
                     }
                     if (faceTrack.isNotEmpty()) {
                         Spacer(Modifier.height(6.dp))
-                        Text("Face tracking ready • Portrait export follows the detected face or group centre.", color = Green, fontSize = 11.sp)
+                        Text("Face tracking data ready • Portrait export will shift toward detected faces. Check the exported clip; unsupported framing falls back to centre crop.", color = Green, fontSize = 11.sp)
                     }
                     if (facePicks.isNotEmpty()) {
                         Button(
@@ -414,7 +414,8 @@ private fun analyseFaces(context: Context, uri: Uri, durationMs: Long): FaceScan
         while (time < durationMs - 500L) {
             val frame = retriever.getFrameAtTime(time * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
             if (frame != null) {
-                val sample = Bitmap.createScaledBitmap(frame, 640, (640f * frame.height / frame.width).toInt().coerceAtLeast(360), true)
+                val sampleHeight = (640f * frame.height / frame.width).toInt().coerceAtLeast(1)
+                val sample = Bitmap.createScaledBitmap(frame, 640, sampleHeight, true)
                 if (sample !== frame) frame.recycle()
                 val faces = Tasks.await(detector.process(InputImage.fromBitmap(sample, 0)))
                 if (faces.isNotEmpty()) {
@@ -446,17 +447,28 @@ private fun analyseFaces(context: Context, uri: Uri, durationMs: Long): FaceScan
 
 private fun createFaceTrackingEffect(points: List<FaceTrackPoint>, clipStartMs: Long): MatrixTransformation {
     val sorted = points.sortedBy { it.timeMs }
+    require(sorted.isNotEmpty()) { "Face tracking requires at least one detected face" }
     return MatrixTransformation { presentationTimeUs ->
         val absoluteMs = clipStartMs + presentationTimeUs / 1000L
-        val before = sorted.lastOrNull { it.timeMs <= absoluteMs } ?: sorted.first()
-        val after = sorted.firstOrNull { it.timeMs >= absoluteMs } ?: sorted.last()
-        val center = if (before.timeMs == after.timeMs) before.centerX else {
-            val fraction = ((absoluteMs - before.timeMs).toFloat() / (after.timeMs - before.timeMs).toFloat()).coerceIn(0f, 1f)
+        val beforeIndex = sorted.indexOfLast { it.timeMs <= absoluteMs }.coerceAtLeast(0)
+        val afterIndex = sorted.indexOfFirst { it.timeMs >= absoluteMs }.let {
+            if (it < 0) sorted.lastIndex else it
+        }
+        val before = sorted[beforeIndex]
+        val after = sorted[afterIndex]
+        val interpolated = if (before.timeMs == after.timeMs) before.centerX else {
+            val fraction = ((absoluteMs - before.timeMs).toFloat() /
+                (after.timeMs - before.timeMs).toFloat()).coerceIn(0f, 1f)
             before.centerX + (after.centerX - before.centerX) * fraction
         }
-        // Presentation performs the 9:16 crop afterwards; this translation moves its crop window toward the tracked face.
-        val target = (center * 2f - 1f).coerceIn(-0.4375f, 0.4375f)
-        Matrix().apply { setTranslate(-target, 0f) }
+        // Smooth nearby samples to reduce camera shake, while retaining gradual subject movement.
+        val nearby = sorted.filter { kotlin.math.abs(it.timeMs - absoluteMs) <= 1800L }
+        val smoothed = if (nearby.isEmpty()) interpolated else
+            (interpolated * 0.55f + nearby.map { it.centerX }.average().toFloat() * 0.45f)
+        // The 9:16 crop can move substantially away from the source centre on landscape footage.
+        // MatrixTransformation operates in normalized device coordinates (-1..1).
+        val desiredOffset = ((smoothed - 0.5f) * 2f).coerceIn(-0.68f, 0.68f)
+        Matrix().apply { postTranslate(-desiredOffset, 0f) }
     }
 }
 
