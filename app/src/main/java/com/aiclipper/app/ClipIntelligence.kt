@@ -21,9 +21,9 @@ object ClipIntelligence {
     ): List<Long> {
         if (durationMs < MIN_SHORT_DURATION_MS || requestedCount <= 0) return emptyList()
         val clipLength = clipDurationMs.coerceAtLeast(MIN_SHORT_DURATION_MS).coerceAtMost(durationMs)
-        val maxByDuration = (durationMs / MIN_SHORT_DURATION_MS).toInt().coerceAtLeast(1)
+        val maxByDuration = (durationMs / clipLength).toInt().coerceAtLeast(1)
         val target = requestedCount.coerceIn(1, 30).coerceAtMost(maxByDuration)
-        val latestMoment = (durationMs - (MIN_SHORT_DURATION_MS - LEAD_IN_MS)).coerceAtLeast(0L)
+        val latestMoment = (durationMs - (clipLength - LEAD_IN_MS)).coerceAtLeast(0L)
         val candidates = linkedSetOf<Long>()
         faceMoments.forEach { candidates.add(it.coerceIn(0L, latestMoment)) }
         sceneMoments.forEach { candidates.add(it.coerceIn(0L, latestMoment)) }
@@ -87,7 +87,7 @@ object ClipIntelligence {
             val start = (moment - LEAD_IN_MS).coerceAtLeast(0L)
             val overlaps = selected.any { existing ->
                 val existingStart = (existing - LEAD_IN_MS).coerceAtLeast(0L)
-                kotlin.math.abs(existingStart - start) < MIN_SHORT_DURATION_MS
+                kotlin.math.abs(existingStart - start) < clipLength
             }
             if (!overlaps) selected.add(moment)
         }
@@ -96,14 +96,14 @@ object ClipIntelligence {
             for (index in 0 until target) {
                 if (selected.size >= target) break
                 val fallbackStart = if (target == 1) {
-                    (durationMs - MIN_SHORT_DURATION_MS) / 2L
+                    (durationMs - clipLength) / 2L
                 } else {
-                    ((durationMs - MIN_SHORT_DURATION_MS) * index.toLong() / (target - 1).toLong())
+                    ((durationMs - clipLength) * index.toLong() / (target - 1).toLong())
                 }
                 val fallbackMoment = (fallbackStart + LEAD_IN_MS).coerceAtMost(latestMoment)
                 val overlaps = selected.any { existing ->
                     val existingStart = (existing - LEAD_IN_MS).coerceAtLeast(0L)
-                    kotlin.math.abs(existingStart - fallbackStart) < MIN_SHORT_DURATION_MS
+                    kotlin.math.abs(existingStart - fallbackStart) < clipLength
                 }
                 if (!overlaps) selected.add(fallbackMoment)
             }
@@ -125,7 +125,7 @@ object ClipIntelligence {
     ): List<ClipRange> {
         if (durationMs < MIN_SHORT_DURATION_MS || requestedCount <= 0) return emptyList()
         val clipLength = clipDurationMs.coerceAtLeast(MIN_SHORT_DURATION_MS).coerceAtMost(durationMs)
-        val availableSlots = (durationMs / MIN_SHORT_DURATION_MS).toInt().coerceAtLeast(1)
+        val availableSlots = (durationMs / clipLength).toInt().coerceAtLeast(1)
         val target = requestedCount.coerceIn(1, 30).coerceAtMost(availableSlots)
         val chosen = mutableListOf<ClipRange>()
         preferredRanges.forEach { range ->
@@ -138,7 +138,7 @@ object ClipIntelligence {
                 chosen.add(range)
             }
         }
-        for (fallback in buildExportRanges(fallbackMoments, durationMs, MIN_SHORT_DURATION_MS)) {
+        for (fallback in buildExportRanges(fallbackMoments, durationMs, clipLength)) {
             if (chosen.size >= target) break
             if (chosen.none { fallback.startMs < it.endMs && fallback.endMs > it.startMs }) {
                 chosen.add(fallback)
