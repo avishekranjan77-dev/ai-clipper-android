@@ -648,7 +648,7 @@ private fun analyseFaces(context: Context, uri: Uri, durationMs: Long): FaceScan
     return FaceScanResult(points, picks.sorted(), layouts)
 }
 
-private fun createFaceTrackingEffect(points: List<FaceTrackPoint>, clipStartMs: Long): MatrixTransformation {
+private fun createFaceTrackingEffect(points: List<FaceTrackPoint>, clipStartMs: Long, outputAspectName: String = "9:16"): MatrixTransformation {
     val sorted = points.sortedBy { it.timeMs }
     require(sorted.isNotEmpty()) { "Face tracking requires at least one detected face" }
     return MatrixTransformation { presentationTimeUs ->
@@ -671,8 +671,13 @@ private fun createFaceTrackingEffect(points: List<FaceTrackPoint>, clipStartMs: 
         // The 9:16 crop can move substantially away from the source centre on landscape footage.
         // MatrixTransformation operates in normalized device coordinates (-1..1).
         val inputAspect = sorted.first().aspectRatio.coerceAtLeast(0.1f)
-        val outputAspect = 9f / 16f
-        // Compensate for the scale applied by the later 9:16 Presentation effect.
+        val outputAspect = when (outputAspectName) {
+            "1:1" -> 1f
+            "16:9" -> 16f / 9f
+            "Original" -> inputAspect
+            else -> 9f / 16f
+        }
+        // Compensate for the scale applied by the later Presentation effect.
         val cropScale = inputAspect / outputAspect
         val desiredOffset = if (inputAspect > outputAspect) {
             (((smoothed - 0.5f) * 2f) / cropScale).coerceIn(-0.32f, 0.32f)
@@ -760,7 +765,7 @@ private suspend fun exportVideo(
             val mediaItem = MediaItem.Builder().setUri(source).setClippingConfiguration(clipping).build()
             val videoEffects = mutableListOf<androidx.media3.common.Effect>()
             if (portrait) {
-                if (faceTrack.isNotEmpty()) videoEffects.add(createFaceTrackingEffect(faceTrack, startMs))
+                if (faceTrack.isNotEmpty()) videoEffects.add(createFaceTrackingEffect(faceTrack, startMs, outputAspect))
                 if (portrait) videoEffects.add(Presentation.createForWidthAndHeight(1080, 1920, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
             }
             val clipCues = speechCaptions.filter { it.endMs > startMs && it.startMs < endMs }.map {
