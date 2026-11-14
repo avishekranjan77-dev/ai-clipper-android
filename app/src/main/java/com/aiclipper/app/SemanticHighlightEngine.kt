@@ -133,7 +133,7 @@ object SemanticHighlightEngine {
             Thread(runnable, "AIClipper-LiteRT-LM").apply { isDaemon = true }
         }
         val modelDispatcher = modelExecutor.asCoroutineDispatcher()
-        try {
+        return try {
             withContext(modelDispatcher) {
                 require(isModelInstalled(context)) { "The on-device AI model is missing or incomplete. Download it again from One-Time AI Setup." }
                 require(captions.isNotEmpty()) { "Generate speech captions before semantic highlight analysis." }
