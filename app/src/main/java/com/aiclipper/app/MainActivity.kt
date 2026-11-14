@@ -1057,15 +1057,15 @@ private suspend fun exportSuggestedClips(
                     exportNext()
                 } catch (error: Exception) {
                     output.delete()
-                    generated.forEach { it.file.delete() }
-                    onError("Clip ${index + 1} could not be prepared: ${error.localizedMessage ?: "unknown error"}")
+                    if (generated.isNotEmpty()) onComplete(generated.toList())
+                    onError("Rendered ${generated.size} clip(s) before clip ${index + 1} could not be prepared: ${error.localizedMessage ?: "unknown error"}")
                 }
             }
             override fun onError(composition: androidx.media3.transformer.Composition, exportResult: ExportResult, exportException: ExportException) {
                 stopProgress()
                 output.delete()
-                generated.forEach { it.file.delete() }
-                onError("Clip ${index + 1} export failed: ${exportException.localizedMessage ?: "unknown error"}")
+                if (generated.isNotEmpty()) onComplete(generated.toList())
+                onError("Rendered ${generated.size} clip(s) before clip ${index + 1} export failed: ${exportException.localizedMessage ?: "unknown error"}")
             }
         }).build()
         try {
@@ -1077,8 +1077,8 @@ private suspend fun exportSuggestedClips(
         } catch (error: Exception) {
             stopProgress()
             output.delete()
-            generated.forEach { it.file.delete() }
-            onError("Could not start clip ${index + 1} export: ${error.localizedMessage ?: "unknown error"}")
+            if (generated.isNotEmpty()) onComplete(generated.toList())
+            onError("Rendered ${generated.size} clip(s) before clip ${index + 1} export could not start: ${error.localizedMessage ?: "unknown error"}")
         }
     }
     exportNext()
